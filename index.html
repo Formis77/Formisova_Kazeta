@@ -127,6 +127,9 @@ h2{font:700 19px/1.2 var(--display);letter-spacing:-.01em;margin:26px 0 12px}
 .hero .sub{color:var(--mute);font-size:14px}
 .mosaic{display:grid;grid-template-columns:1fr 1fr;aspect-ratio:1;border-radius:8px;overflow:hidden;max-width:100%}
 .mosaic .art{width:100%;height:100%;border-radius:0}
+.pc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 10px}
+.pc .pill{height:40px;padding:0 16px;border-radius:20px;font-size:14px}
+.pc .pill.on{background:var(--deck);color:var(--tape);box-shadow:inset 0 0 0 1.5px var(--tape)}
 .textbtns{display:flex;gap:6px;flex-wrap:wrap}
 
 /* search */
@@ -319,7 +322,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='4';
+const VERSION='5';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -339,7 +342,7 @@ const LS={get(k,d){try{const v=localStorage.getItem('kazeta.'+k);return v==null?
 
 /* ---------- state ---------- */
 const S={tracks:[],byId:new Map(),playlists:[],artURL:new Map(),tab:'home',stack:[],libTab:LS.get('libTab','songs'),q:'',
-  queue:[],base:[],qi:-1,from:'Your library',shuffle:LS.get('shuffle',false),repeat:LS.get('repeat','off'),loaded:false};
+  queue:[],base:[],qi:-1,from:'Your library',shuffle:LS.get('shuffle',false),repeat:LS.get('loopDefault5',false)?LS.get('repeat','all'):(LS.set('loopDefault5',true),LS.set('repeat','all'),'all'),loaded:false};
 const audio=new Audio();audio.preload='auto';
 let curURL=null,playTok=0;
 
@@ -549,6 +552,9 @@ function render(){
   else{top.innerHTML=`${back}<h1 style="font-size:19px">${esc(detailTitle(v))}</h1>`;main.innerHTML=detailHTML(v);}
   main.classList.toggle('paused',audio.paused);
 }
+function playCtrls(k){
+  return `<div class="pc"><button class="pill amber" data-act="playall" data-l="${k}">${ic('play',18)}Play in order</button><button class="pill${S.shuffle?' on':''}" data-act="playall" data-l="${k}" data-sh="1">${ic('shuffle',18)}Shuffle</button><button class="pill${S.repeat!=='off'?' on':''}" data-act="loopToggle" aria-pressed="${S.repeat!=='off'}">${ic(S.repeat==='one'?'repeat1':'repeat',18)}${S.repeat==='one'?'Loop song':'Loop'}${S.repeat!=='off'?' on':' off'}</button></div>`;
+}
 function detailTitle(v){if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
 function banners(){
   let h='';
@@ -581,7 +587,7 @@ function libraryHTML(){
   let h=`<div class="chips" role="group" aria-label="Library view">${tabs.map(([k,l])=>`<button class="chip" data-act="libtab" data-k="${k}" aria-pressed="${S.libTab===k}">${l}</button>`).join('')}</div>`;
   if(!S.tracks.length&&S.libTab!=='playlists')h+=`<div class="empty"><h3>No songs yet</h3><p>Import music files from the Files app to fill your library.</p><div class="acts"><button class="pill amber" data-act="import">${ic('import',18)}Import songs</button><button class="pill" data-act="demo">Try 3 demo songs</button></div></div>`;
   else if(S.libTab==='songs'){const list=[...S.tracks].sort(byTitle);const k=reg(list.map(t=>t.id));LISTS[k].from='All songs';
-    h+=`<div class="bar"><div class="grow"><b>${plural(list.length,'song')}</b><div class="muted small">${total(list)}</div></div><button class="ib" data-act="playall" data-l="${k}" data-sh="1" aria-label="Shuffle all" style="color:var(--fg)">${ic('shuffle',22)}</button><button class="playbig" data-act="playall" data-l="${k}" aria-label="Play all">${ic('play',24)}</button></div>`+
+    h+=`<div class="bar"><div class="grow"><b>${plural(list.length,'song')}</b><div class="muted small">${total(list)}</div></div></div>${playCtrls(k)}`+
       `<div class="list">${list.map((t,i)=>row(t,k,i)).join('')}</div>`;}
   else if(S.libTab==='albums'){const al=albums().sort((a,b)=>a.name.localeCompare(b.name));h+=`<div class="grid2">${al.map(a=>`<button class="cover" data-act="open" data-type="album" data-key="${esc(a.key)}">${art(a.tracks.find(t=>t.artKey)||a.tracks[0],'lg')}<b>${esc(a.name)}</b><small>${esc(a.artist)}</small></button>`).join('')}</div>`;}
   else if(S.libTab==='artists'){h+=`<div class="list">${artists().map(a=>`<div class="row" data-act="open" data-type="artist" data-key="${esc(a.name)}" role="button" tabindex="0">${art(a.tracks.find(t=>t.artKey)||a.tracks[0],'md','round')}<div class="meta"><div class="t">${esc(a.name)}</div><div class="s">${plural(a.tracks.length,'song')}</div></div></div>`).join('')}</div>`;}
@@ -611,7 +617,7 @@ function detailHTML(v){
     extra=`<div class="textbtns"><button class="pill" data-act="renamepl" data-id="${p.id}">${ic('edit',16)}Rename</button><button class="pill" data-act="delpl" data-id="${p.id}">${ic('trash',16)}Delete</button></div>`;}
   const k=reg(list.map(t=>t.id));LISTS[k].from=name;
   let h=`<div class="hero">${artH}<div class="kind">${kind}</div><h3>${esc(name)}</h3><div class="sub">${sub}</div></div>`;
-  h+=`<div class="bar" style="margin-top:14px"><div class="grow">${extra}</div>${list.length?`<button class="ib" data-act="playall" data-l="${k}" data-sh="1" aria-label="Shuffle" style="color:var(--fg)">${ic('shuffle',22)}</button><button class="playbig" data-act="playall" data-l="${k}" aria-label="Play">${ic('play',24)}</button>`:''}</div>`;
+  h+=(extra?`<div class="bar" style="margin-top:14px;justify-content:center">${extra}</div>`:'')+(list.length?playCtrls(k):'<div style="height:12px"></div>');
   if(!list.length)h+=`<p class="muted" style="text-align:center;margin-top:24px">${v.type==='liked'?'Tap the heart on any song to save it here.':'Add songs with the ••• button next to any song.'}</p>`;
   else h+=`<div class="list">${list.map((t,i)=>row(t,k,i,v.type==='playlist'?`pl:${v.key}:${i}`:'')).join('')}</div>`;
   return h;
@@ -632,11 +638,12 @@ function markRows(){const id=curId();document.querySelectorAll('.row[data-tid]')
 
 /* ---------- playback ---------- */
 function shuffled(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
-function playList(ids,i,forceShuffle){
+function playList(ids,i,mode){
   if(!ids.length)return;
-  if(forceShuffle&&!S.shuffle){S.shuffle=true;LS.set('shuffle',true);}
+  if(mode==='shuffle'&&!S.shuffle){S.shuffle=true;LS.set('shuffle',true);}
+  if(mode==='order'&&S.shuffle){S.shuffle=false;LS.set('shuffle',false);}
   S.base=ids.slice();
-  if(S.shuffle){const start=forceShuffle?ids[Math.floor(Math.random()*ids.length)]:ids[i];S.queue=[start,...shuffled(ids.filter((x,j)=>x!==start||j!==ids.indexOf(start)))];S.qi=0;}
+  if(S.shuffle){const start=mode==='shuffle'?ids[Math.floor(Math.random()*ids.length)]:ids[i];const rest=ids.slice();rest.splice(rest.indexOf(start),1);S.queue=[start,...shuffled(rest)];S.qi=0;}
   else{S.queue=ids.slice();S.qi=i;}
   loadIdx(S.qi,true);
 }
@@ -670,6 +677,7 @@ function next(user=true){
    the switch is synchronous, with no waiting on storage. */
 let pre=null,preTok=0;
 async function prepareNext(){
+  if(S.shuffle&&S.repeat==='all'&&S.qi===S.queue.length-1&&S.queue.length>2){const cur=S.queue[S.qi];const others=S.queue.slice(0,-1);S.queue=[...shuffled(others),cur];S.qi=S.queue.length-1;savePrefs();}
   const n=S.repeat==='one'||S.qi<0?-1:nextIndex(false),id=n>=0?S.queue[n]:null;
   if(pre&&pre.id===id)return;
   if(pre){URL.revokeObjectURL(pre.url);pre=null;}
@@ -692,9 +700,9 @@ function setShuffle(on){
   if(cur){if(!S.base.length)S.base=S.queue.slice();
     if(on){S.queue=[cur,...shuffled(S.base.filter(x=>x!==cur))];S.qi=0;}
     else{const i=S.base.indexOf(cur);if(i>=0){S.queue=S.base.slice();S.qi=i;}}}
-  updateNow();savePrefs();prepareNext();toast(on?'Shuffle on':'Shuffle off');
+  updateNow();savePrefs();prepareNext();render();toast(on?'Shuffle on':'Shuffle off');
 }
-function cycleRepeat(){S.repeat={off:'all',all:'one',one:'off'}[S.repeat];LS.set('repeat',S.repeat);updateNow();prepareNext();toast({off:'Repeat off',all:'Repeating the whole list',one:'Repeating this song'}[S.repeat]);}
+function cycleRepeat(){S.repeat={off:'all',all:'one',one:'off'}[S.repeat];LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast({off:'Repeat off',all:'Repeating the whole list',one:'Repeating this song'}[S.repeat]);}
 audio.addEventListener('ended',()=>{if(S.repeat==='one'){audio.currentTime=0;audio.play().catch(()=>{});}else next(false);});
 audio.addEventListener('play',()=>{updatePlayBtns();markRows();if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';});
 audio.addEventListener('pause',()=>{updatePlayBtns();markRows();savePrefs();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';});
@@ -792,7 +800,7 @@ const A={
   back:()=>{S.stack.pop();$('#main').innerHTML='';render();},
   libtab:el=>{S.libTab=el.dataset.k;LS.set('libTab',S.libTab);render();},
   play:el=>{const l=LISTS[el.dataset.l];if(!l)return;S.from=l.from||'Your library';const i=+el.dataset.i;if(curId()===l[i]){openPlayer();return;}playList(l,i);},
-  playall:el=>{const l=LISTS[el.dataset.l];if(!l)return;S.from=l.from||'Your library';playList(l,0,!!el.dataset.sh);},
+  playall:el=>{const l=LISTS[el.dataset.l];if(!l)return;S.from=l.from||'Your library';playList(l,0,el.dataset.sh?'shuffle':'order');},
   import:()=>$('#file').click(),
   demo:()=>addDemos(),
   toggle:()=>toggle(),next:()=>next(),prev:()=>prev(),
@@ -821,6 +829,7 @@ const A={
   rmdemo:async()=>{for(const t of S.tracks.filter(t=>t.demo))await deleteTrack(t.id);updateNow();savePrefs();render();toast('Demo songs removed');},
   persist:async()=>{let ok=false;try{ok=await navigator.storage.persist();}catch(e){}toast(ok?'Songs are protected from cleanup':isPWAFile?'Open Kazeta from your homescreen, then try again':'Only the homescreen version can do this');fillStorage();},
   hideBanner:el=>{LS.set(el.dataset.k,true);render();},
+  loopToggle:()=>{S.repeat=S.repeat==='off'?'all':'off';LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast(S.repeat==='all'?'Loop on: the list starts again at the end':'Loop off: stops at the end');},
   queue:()=>{const up=S.queue.slice(S.qi+1),t=S.byId.get(curId());if(!t)return;
     openSheet(`<div class="field"><label>Now playing</label></div>`+sheetHead(t)+`<div class="field"><label>Next up</label></div>`+(up.length?`<div class="list">${up.slice(0,60).map((id,j)=>{const x=S.byId.get(id);return x?`<div class="row" data-act="qjump" data-i="${S.qi+1+j}">${art(x)}<div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}</div></div><span class="dur">${fmt(x.duration)}</span></div>`:'';}).join('')}</div><div class="sh-acts"><button class="pill" data-act="qclear">Clear upcoming</button></div>`:`<p class="muted">Nothing after this song${S.repeat==='all'?'. The list starts again from the top.':'.'}</p>`));},
   qjump:el=>{closeSheet();loadIdx(+el.dataset.i,true);},
