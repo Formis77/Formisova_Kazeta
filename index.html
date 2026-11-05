@@ -653,14 +653,37 @@ async function loadIdx(i,auto,seekTo){
   audio.src=curURL;audio.muted=false;
   if(seekTo){audio.addEventListener('loadedmetadata',()=>{try{audio.currentTime=seekTo;}catch(e){}},{once:true});audio.load();}
   if(auto){try{await audio.play();}catch(e){}t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
-  updateNow();markRows();savePrefs();setMS(t);
+  updateNow();markRows();savePrefs();setMS(t);prepareNext();
 }
 function toggle(){if(!audio.src||S.qi<0){if(S.tracks.length){const ids=[...S.tracks].sort(byTitle).map(t=>t.id);playList(ids,0);}return;}if(audio.paused)audio.play().catch(()=>{});else audio.pause();}
+function nextIndex(user){if(S.qi+1<S.queue.length)return S.qi+1;if((S.repeat==='all'||user)&&S.queue.length)return 0;return -1;}
 function next(user=true){
   if(S.qi<0)return;
-  if(S.qi+1<S.queue.length)return loadIdx(S.qi+1,true);
-  if(S.repeat==='all'||user){if(S.shuffle&&S.base.length){S.queue=shuffled(S.base);}return loadIdx(0,S.repeat==='all'||user);}
-  audio.pause();audio.currentTime=0;updateNow();
+  const n=nextIndex(user);
+  if(n<0){audio.pause();audio.currentTime=0;updateNow();return;}
+  if(pre&&pre.id===S.queue[n])return playPrepared(n);
+  loadIdx(n,true);
+}
+/* Background playback: iOS only lets a locked-screen web app start the next song if it happens
+   instantly when the current one ends. So the next song is loaded in advance, and on 'ended'
+   the switch is synchronous, with no waiting on storage. */
+let pre=null,preTok=0;
+async function prepareNext(){
+  const n=S.repeat==='one'||S.qi<0?-1:nextIndex(false),id=n>=0?S.queue[n]:null;
+  if(pre&&pre.id===id)return;
+  if(pre){URL.revokeObjectURL(pre.url);pre=null;}
+  if(!id)return;
+  const tok=++preTok,t=S.byId.get(id);
+  try{let blob=await db.get('blobs',id);if(!blob||tok!==preTok)return;
+    try{blob=new Blob([await blob.arrayBuffer()],{type:(t&&t.type)||blob.type||'audio/mpeg'});}catch(e){}
+    if(tok!==preTok)return;pre={id,url:URL.createObjectURL(blob)};}catch(e){}
+}
+function playPrepared(n){
+  const t=S.byId.get(S.queue[n]);++playTok;S.qi=n;
+  if(curURL)URL.revokeObjectURL(curURL);curURL=pre.url;pre=null;
+  audio.muted=false;audio.src=curURL;const p=audio.play();if(p)p.catch(()=>{});
+  if(t){t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
+  updateNow();markRows();savePrefs();setMS(t);prepareNext();
 }
 function prev(){if(audio.currentTime>3||S.qi<=0){audio.currentTime=0;if(audio.paused)audio.play().catch(()=>{});return;}loadIdx(S.qi-1,true);}
 function setShuffle(on){
@@ -668,9 +691,9 @@ function setShuffle(on){
   if(cur){if(!S.base.length)S.base=S.queue.slice();
     if(on){S.queue=[cur,...shuffled(S.base.filter(x=>x!==cur))];S.qi=0;}
     else{const i=S.base.indexOf(cur);if(i>=0){S.queue=S.base.slice();S.qi=i;}}}
-  updateNow();savePrefs();toast(on?'Shuffle on':'Shuffle off');
+  updateNow();savePrefs();prepareNext();toast(on?'Shuffle on':'Shuffle off');
 }
-function cycleRepeat(){S.repeat={off:'all',all:'one',one:'off'}[S.repeat];LS.set('repeat',S.repeat);updateNow();toast({off:'Repeat off',all:'Repeating the whole list',one:'Repeating this song'}[S.repeat]);}
+function cycleRepeat(){S.repeat={off:'all',all:'one',one:'off'}[S.repeat];LS.set('repeat',S.repeat);updateNow();prepareNext();toast({off:'Repeat off',all:'Repeating the whole list',one:'Repeating this song'}[S.repeat]);}
 audio.addEventListener('ended',()=>{if(S.repeat==='one'){audio.currentTime=0;audio.play().catch(()=>{});}else next(false);});
 audio.addEventListener('play',()=>{updatePlayBtns();markRows();if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';});
 audio.addEventListener('pause',()=>{updatePlayBtns();markRows();savePrefs();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';});
@@ -750,7 +773,7 @@ async function deleteTrack(id){
   await db.del('blobs',id);await db.del('tracks',id);
   for(const p of S.playlists)if(p.ids.includes(id)){p.ids=p.ids.filter(x=>x!==id);await db.put('playlists',p);}
   if(t.artKey&&!S.tracks.some(x=>x.id!==id&&x.artKey===t.artKey)){await db.del('art',t.artKey);const u=S.artURL.get(t.artKey);if(u)URL.revokeObjectURL(u);S.artURL.delete(t.artKey);}
-  S.tracks=S.tracks.filter(x=>x.id!==id);S.byId.delete(id);
+  S.tracks=S.tracks.filter(x=>x.id!==id);S.byId.delete(id);prepareNext();
 }
 async function toggleLike(id){const t=S.byId.get(id);if(!t)return;t.liked=!t.liked;t.likedAt=t.liked?Date.now():0;await db.put('tracks',t);toast(t.liked?'Saved to Liked Songs':'Removed from Liked Songs');if(curId()===id)updateNow();render();}
 
@@ -772,8 +795,8 @@ const A={
   menu:el=>openMenu(el.dataset.id,el.dataset.ctx),
   closeSheet:()=>closeSheet(),
   likeId:el=>{closeSheet();toggleLike(el.dataset.id);},
-  playnext:el=>{const id=el.dataset.id;closeSheet();if(S.qi<0){playList([id],0);return;}S.queue.splice(S.qi+1,0,id);savePrefs();updateNow();toast('Plays next');},
-  addq:el=>{const id=el.dataset.id;closeSheet();if(S.qi<0){playList([id],0);return;}S.queue.push(id);savePrefs();updateNow();toast('Added to queue');},
+  playnext:el=>{const id=el.dataset.id;closeSheet();if(S.qi<0){playList([id],0);return;}S.queue.splice(S.qi+1,0,id);savePrefs();updateNow();prepareNext();toast('Plays next');},
+  addq:el=>{const id=el.dataset.id;closeSheet();if(S.qi<0){playList([id],0);return;}S.queue.push(id);savePrefs();updateNow();prepareNext();toast('Added to queue');},
   addto:el=>{const id=el.dataset.id;const t=S.byId.get(id);
     openSheet(sheetHead(t)+optH('plus','New playlist','newplWith',`data-id="${id}"`)+S.playlists.map(p=>`<button class="opt" data-act="topl" data-id="${id}" data-pl="${p.id}">${plArt(p,'sm')}<span>${esc(p.name)}<span class="muted small" style="display:block">${plural(p.ids.length,'song')}</span></span></button>`).join(''));},
   topl:async el=>{const p=S.playlists.find(p=>p.id===el.dataset.pl);closeSheet();if(!p)return;if(p.ids.includes(el.dataset.id)){toast(`Already in ${p.name}`);return;}p.ids.push(el.dataset.id);await savePl(p);toast(`Added to ${p.name}`);render();},
@@ -793,7 +816,7 @@ const A={
   queue:()=>{const up=S.queue.slice(S.qi+1),t=S.byId.get(curId());if(!t)return;
     openSheet(`<div class="field"><label>Now playing</label></div>`+sheetHead(t)+`<div class="field"><label>Next up</label></div>`+(up.length?`<div class="list">${up.slice(0,60).map((id,j)=>{const x=S.byId.get(id);return x?`<div class="row" data-act="qjump" data-i="${S.qi+1+j}">${art(x)}<div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}</div></div><span class="dur">${fmt(x.duration)}</span></div>`:'';}).join('')}</div><div class="sh-acts"><button class="pill" data-act="qclear">Clear upcoming</button></div>`:`<p class="muted">Nothing after this song${S.repeat==='all'?'. The list starts again from the top.':'.'}</p>`));},
   qjump:el=>{closeSheet();loadIdx(+el.dataset.i,true);},
-  qclear:()=>{S.queue=S.queue.slice(0,S.qi+1);S.base=S.queue.slice();closeSheet();updateNow();savePrefs();toast('Queue cleared');},
+  qclear:()=>{S.queue=S.queue.slice(0,S.qi+1);S.base=S.queue.slice();closeSheet();updateNow();savePrefs();prepareNext();toast('Queue cleared');},
 };
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const f=A[el.dataset.act];if(f){e.stopPropagation();f(el,e);}});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[role="button"][data-act]')){e.preventDefault();e.target.click();}if(e.key==='Escape'){closeSheet();closePlayer();}});
