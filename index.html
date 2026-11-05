@@ -319,6 +319,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const VERSION='4';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -588,7 +589,7 @@ function libraryHTML(){
     <div class="row" data-act="open" data-type="liked" role="button" tabindex="0">${likedArt('md')}<div class="meta"><div class="t">Liked Songs</div><div class="s">Playlist · ${plural(S.tracks.filter(t=>t.liked).length,'song')}</div></div></div>
     ${S.playlists.map(p=>`<div class="row" data-act="open" data-type="playlist" data-key="${p.id}" role="button" tabindex="0">${plArt(p,'md')}<div class="meta"><div class="t">${esc(p.name)}</div><div class="s">Playlist · ${plural(p.ids.length,'song')}</div></div></div>`).join('')}</div>`;}
   const demos=S.tracks.filter(t=>t.demo).length;
-  h+=`<div class="card" id="storage"><h4>Storage on this phone</h4><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns" id="stB"></div>${demos?`<div class="textbtns"><button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button></div>`:''}</div>`;
+  h+=`<div class="card" id="storage"><h4>Storage on this phone <span class="muted small" style="font-weight:500">· Kazeta v${VERSION}</span></h4><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns" id="stB"></div>${demos?`<div class="textbtns"><button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button></div>`:''}</div>`;
   return h;
 }
 const mb=b=>b>=1e9?(b/1e9).toFixed(1)+' GB':Math.round(b/1e6)+' MB';
@@ -703,7 +704,14 @@ audio.addEventListener('error',()=>{if(!audio.src||audio.src.startsWith('data:')
   if(!isPWAFile)msg+=' The preview inside Claude may block audio; the homescreen version doesn\'t.';
   toast(msg);if(S.qi+1<S.queue.length)setTimeout(()=>next(false),1500);});
 let lastSave=0,dragging=false;
-audio.addEventListener('timeupdate',()=>{updateTime();const n=Date.now();if(n-lastSave>5000){lastSave=n;savePrefs();}});
+audio.addEventListener('timeupdate',()=>{
+  /* Switch songs just BEFORE the current one ends. While audio is still playing, iOS keeps the
+     locked-screen app awake and allows the switch; once it has ended, iOS may already have suspended us. */
+  if(!audio.paused&&isFinite(audio.duration)&&audio.duration>3&&audio.duration-audio.currentTime<0.7){
+    if(S.repeat==='one'){audio.currentTime=0;}
+    else{const n=nextIndex(false);if(n>=0&&pre&&pre.id===S.queue[n]){playPrepared(n);return;}}
+  }
+  updateTime();const n=Date.now();if(n-lastSave>5000){lastSave=n;savePrefs();}});
 function updateTime(){
   const d=audio.duration||(S.byId.get(curId())||{}).duration||0,c=audio.currentTime||0,p=d?c/d*100:0;
   $('#miniProg').style.width=p+'%';
