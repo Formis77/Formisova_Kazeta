@@ -329,7 +329,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='6';
+const VERSION='7';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -602,7 +602,7 @@ function libraryHTML(){
     <div class="row" data-act="open" data-type="liked" role="button" tabindex="0">${likedArt('md')}<div class="meta"><div class="t">Liked Songs</div><div class="s">Playlist · ${plural(S.tracks.filter(t=>t.liked).length,'song')}</div></div></div>
     ${S.playlists.map(p=>`<div class="row" data-act="open" data-type="playlist" data-key="${p.id}" role="button" tabindex="0">${plArt(p,'md')}<div class="meta"><div class="t">${esc(p.name)}</div><div class="s">Playlist · ${plural(p.ids.length,'song')}</div></div></div>`).join('')}</div>`;}
   const demos=S.tracks.filter(t=>t.demo).length;
-  h+=`<div class="card" id="storage"><h4>Storage on this phone <span class="muted small" style="font-weight:500">· Kazeta v${VERSION}</span></h4><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns" id="stB"></div>${demos?`<div class="textbtns"><button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button></div>`:''}</div>`;
+  h+=`<div class="card" id="storage"><h4>Storage on this phone <span class="muted small" style="font-weight:500">· Kazeta v${VERSION}</span></h4><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns"><span id="stB" style="display:contents"></span><button class="pill" data-act="update">${ic('import',16)}Check for updates</button></div>${demos?`<div class="textbtns"><button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button></div>`:''}</div>`;
   return h;
 }
 const mb=b=>b>=1e9?(b/1e9).toFixed(1)+' GB':Math.round(b/1e6)+' MB';
@@ -768,7 +768,15 @@ function prime(){try{audio.muted=true;if(!audio.src)audio.src=SILENT;const p=aud
 /* ---------- player overlay / sheets / toast ---------- */
 function openPlayer(){$('#player').classList.add('open');}
 function closePlayer(){$('#player').classList.remove('open');}
-let sheetMode=null;
+let sheetMode=null,swReg=null;
+async function checkUpdate(){
+  if(!isPWAFile){toast('Updates only apply to the homescreen version');return;}
+  toast('Checking for updates…');
+  try{const r=await fetch('./index.html',{cache:'no-store'});const html=await r.text();const m=html.match(/const VERSION='(\d+)'/);
+    if(m&&m[1]!==VERSION){await fetch('./',{cache:'reload'}).catch(()=>{});if(swReg)await swReg.update().catch(()=>{});toast(`Updating to v${m[1]}…`);setTimeout(()=>location.reload(),600);}
+    else toast(`You have the newest version (v${VERSION})`);}
+  catch(e){toast('No internet. Connect and try again.');}
+}
 function openSheet(html,mode){sheetMode=mode||null;const s=$('#sheet');s.innerHTML='<div class="grab"></div>'+html;s.classList.add('open');$('#scrim').classList.add('open');}
 function closeSheet(){sheetMode=null;$('#sheet').classList.remove('open');$('#scrim').classList.remove('open');}
 let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),Math.max(2600,m.length*55));}
@@ -864,6 +872,7 @@ const A={
   del:el=>{const t=S.byId.get(el.dataset.id);openSheet(sheetHead(t)+`<div class="field"><label>Delete this song?</label><p class="muted" style="margin:0">It is removed from Kazeta and all playlists. The original file in the Files app stays.</p></div><div class="sh-acts"><button class="pill" data-act="closeSheet">Cancel</button><button class="pill red" data-act="delYes" data-id="${t.id}">Delete song</button></div>`);},
   delYes:async el=>{closeSheet();await deleteTrack(el.dataset.id);updateNow();savePrefs();if(S.stack.length&&!viewTracks(view()).length&&view().type!=='playlist'&&view().type!=='liked')S.stack.pop();render();toast('Song deleted');},
   rmdemo:async()=>{for(const t of S.tracks.filter(t=>t.demo))await deleteTrack(t.id);updateNow();savePrefs();render();toast('Demo songs removed');},
+  update:()=>checkUpdate(),
   persist:async()=>{let ok=false;try{ok=await navigator.storage.persist();}catch(e){}toast(ok?'Songs are protected from cleanup':isPWAFile?'Open Kazeta from your homescreen, then try again':'Only the homescreen version can do this');fillStorage();},
   hideBanner:el=>{LS.set(el.dataset.k,true);render();},
   loopToggle:()=>{S.repeat=S.repeat==='off'?'all':'off';LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast(S.repeat==='all'?'Loop on: the list starts again at the end':'Loop off: stops at the end');},
@@ -886,7 +895,13 @@ $('#file').addEventListener('change',e=>{const f=e.target.files;if(f&&f.length)i
   if(s&&s.queue){S.queue=s.queue.filter(id=>S.byId.has(id));S.base=(s.base||[]).filter(id=>S.byId.has(id));S.from=s.from||'Your library';
     const cur=s.queue[s.qi];S.qi=S.queue.indexOf(cur);if(S.qi>=0)await loadIdx(S.qi,false,s.time);}
   render();updateNow();
-  if(isPWAFile&&'serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if(isPWAFile&&'serviceWorker' in navigator){
+    const hadCtl=!!navigator.serviceWorker.controller;let reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{if(hadCtl&&!reloaded&&audio.paused){reloaded=true;location.reload();}});
+    navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
+      swReg=reg;document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')reg.update().catch(()=>{});});
+    }).catch(()=>{});
+  }
 })();
 })();
 </script>
