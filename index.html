@@ -130,6 +130,12 @@ h2{font:700 19px/1.2 var(--display);letter-spacing:-.01em;margin:26px 0 12px}
 .pc{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 10px}
 .pc .pill{height:40px;padding:0 16px;border-radius:20px;font-size:14px}
 .pc .pill.on{background:var(--deck);color:var(--tape);box-shadow:inset 0 0 0 1.5px var(--tape)}
+.qh2{font:700 17px var(--display);margin:4px 0 10px}
+.qhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:16px 0 6px}
+.qrow{background:var(--deck);transition:transform .15s}
+.qrow.drag{transition:none;position:relative;z-index:5;background:var(--deck-2);box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.qh{width:40px;height:44px;display:grid;place-items:center;color:var(--mute);touch-action:none;flex:none;cursor:grab}
+.qx{width:34px;height:34px}
 .textbtns{display:flex;gap:6px;flex-wrap:wrap}
 
 /* search */
@@ -234,6 +240,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;bac
     <div id="miniArt"></div>
     <div class="meta"><div class="t" id="miniT"></div><div class="s" id="miniS"></div></div>
     <button class="ib" data-act="likeCur" id="miniLike" aria-label="Like"></button>
+    <button class="ib" data-act="queue" id="miniQueue" aria-label="Show queue"></button>
     <button class="ib" data-act="toggle" id="miniPlay" aria-label="Play"></button>
     <div class="prog"><i id="miniProg"></i></div>
   </div>
@@ -322,7 +329,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='5';
+const VERSION='6';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -740,6 +747,7 @@ function updateNow(){
   $('#phFrom').textContent=S.from||'Your library';
   $('#phFmt').textContent=[t.ext,t.size?mb(t.size):'',S.queue.length>1?`${S.qi+1} of ${S.queue.length}`:''].filter(Boolean).join(' · ');
   const lk=t.liked;[$('#phLike'),$('#miniLike')].forEach(b=>{b.innerHTML=ic(lk?'heartF':'heart',b.id==='miniLike'?22:26);b.classList.toggle('on',lk);b.style.color=lk?'var(--tape)':'';b.setAttribute('aria-label',lk?'Remove from Liked Songs':'Save to Liked Songs');});
+  $('#miniQueue').innerHTML=ic('queue',22);$('#bQueue').innerHTML=ic('queue',24);if(sheetMode==='queue')renderQueue();
   const sb=$('#bShuf');sb.innerHTML=ic('shuffle',24);sb.classList.toggle('on',S.shuffle);sb.setAttribute('aria-pressed',S.shuffle);
   const rb=$('#bRep');rb.innerHTML=ic(S.repeat==='one'?'repeat1':'repeat',24);rb.classList.toggle('on',S.repeat!=='off');rb.setAttribute('aria-label','Repeat: '+S.repeat);
   updatePlayBtns();updateTime();
@@ -760,11 +768,40 @@ function prime(){try{audio.muted=true;if(!audio.src)audio.src=SILENT;const p=aud
 /* ---------- player overlay / sheets / toast ---------- */
 function openPlayer(){$('#player').classList.add('open');}
 function closePlayer(){$('#player').classList.remove('open');}
-function openSheet(html){const s=$('#sheet');s.innerHTML='<div class="grab"></div>'+html;s.classList.add('open');$('#scrim').classList.add('open');}
-function closeSheet(){$('#sheet').classList.remove('open');$('#scrim').classList.remove('open');}
+let sheetMode=null;
+function openSheet(html,mode){sheetMode=mode||null;const s=$('#sheet');s.innerHTML='<div class="grab"></div>'+html;s.classList.add('open');$('#scrim').classList.add('open');}
+function closeSheet(){sheetMode=null;$('#sheet').classList.remove('open');$('#scrim').classList.remove('open');}
 let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),Math.max(2600,m.length*55));}
 function busy(on,title,n,of){const b=$('#busy');b.hidden=!on;if(!on)return;$('#busyT').textContent=title;$('#busyS').textContent=of?`${n} of ${of}`:'';$('#busyM').style.width=(of?n/of*100:0)+'%';}
 const optH=(icn,label,act,data='',cls='')=>`<button class="opt ${cls}" data-act="${act}" ${data}>${ic(icn,22)}<span>${label}</span></button>`;
+function afterQueueChange(){savePrefs();updateNow();prepareNext();if(sheetMode==='queue')renderQueue();}
+function renderQueue(){
+  const w=$('#qwrap');if(!w)return;const t=S.byId.get(curId());if(!t){closeSheet();return;}
+  const up=S.queue.slice(S.qi+1).map((id,j)=>({id,i:S.qi+1+j,t:S.byId.get(id)})).filter(x=>x.t).slice(0,250);
+  const loopNote=S.repeat==='all'?'When the list ends, it starts again from the top.':S.repeat==='one'?'Looping the current song.':'Playback stops after the last song.';
+  w.innerHTML=`<div class="qh2">Now playing</div>${sheetHead(t)}
+    <div class="qhead"><div class="qh2" style="margin:0">Next from: ${esc(S.from||'Your library')}</div>${up.length?'<button class="pill" data-act="qclear">Clear</button>':''}</div>
+    ${up.length?`<div class="list" id="qlist">${up.map(x=>`<div class="row qrow" data-act="qjump" data-i="${x.i}">${art(x.t)}<div class="meta"><div class="t">${esc(x.t.title)}</div><div class="s">${esc(x.t.artist)}</div></div><button class="ib qx" data-act="qrm" data-i="${x.i}" aria-label="Remove ${esc(x.t.title)} from queue">${ic('x',18)}</button><span class="qh" aria-label="Drag to reorder" role="img"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 8h14M5 12h14M5 16h14"/></svg></span></div>`).join('')}</div>
+    <p class="muted small" style="margin:10px 0 0">Drag ☰ to reorder. ${loopNote}</p>`:`<p class="muted">Nothing after this song. ${loopNote}</p>`}`;
+  bindQueueDrag();
+}
+function bindQueueDrag(){
+  const list=$('#qlist');if(!list)return;const sheet=$('#sheet');
+  list.querySelectorAll('.qh').forEach(h=>h.addEventListener('pointerdown',e=>{
+    e.preventDefault();e.stopPropagation();
+    const row=h.closest('.qrow'),rows=[...list.children],from=rows.indexOf(row),hg=row.offsetHeight,y0=e.clientY,st0=sheet.scrollTop;let to=from,raf=0,lastY=y0;
+    row.classList.add('drag');try{h.setPointerCapture(e.pointerId);}catch(_){}
+    const paint=()=>{const dy=lastY-y0+(sheet.scrollTop-st0);row.style.transform=`translateY(${dy}px)`;to=Math.max(0,Math.min(rows.length-1,from+Math.round(dy/hg)));
+      rows.forEach((r,i)=>{if(r===row)return;let sh=0;if(from<to&&i>from&&i<=to)sh=-hg;if(from>to&&i<from&&i>=to)sh=hg;r.style.transform=sh?`translateY(${sh}px)`:'';});};
+    const scroll=()=>{const b=sheet.getBoundingClientRect();if(lastY<b.top+70)sheet.scrollTop-=10;else if(lastY>b.bottom-70)sheet.scrollTop+=10;paint();raf=requestAnimationFrame(scroll);};
+    raf=requestAnimationFrame(scroll);
+    const move=ev=>{lastY=ev.clientY;paint();};
+    const up=()=>{cancelAnimationFrame(raf);h.removeEventListener('pointermove',move);h.removeEventListener('pointerup',up);h.removeEventListener('pointercancel',up);
+      rows.forEach(r=>{r.style.transform='';});row.classList.remove('drag');
+      if(to!==from){const A=S.qi+1+from,B=S.qi+1+to;const [id]=S.queue.splice(A,1);S.queue.splice(B,0,id);if(!S.shuffle)S.base=S.queue.slice();afterQueueChange();}};
+    h.addEventListener('pointermove',move);h.addEventListener('pointerup',up);h.addEventListener('pointercancel',up);
+  }));
+}
 function sheetHead(t){return `<div class="sh-head">${art(t)}<div class="meta"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.artist)}${t.album?' · '+esc(t.album):''}</div></div></div>`;}
 function openMenu(id,ctx){
   const t=S.byId.get(id);if(!t)return;const d=`data-id="${id}" data-ctx="${ctx||''}"`;
@@ -830,10 +867,10 @@ const A={
   persist:async()=>{let ok=false;try{ok=await navigator.storage.persist();}catch(e){}toast(ok?'Songs are protected from cleanup':isPWAFile?'Open Kazeta from your homescreen, then try again':'Only the homescreen version can do this');fillStorage();},
   hideBanner:el=>{LS.set(el.dataset.k,true);render();},
   loopToggle:()=>{S.repeat=S.repeat==='off'?'all':'off';LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast(S.repeat==='all'?'Loop on: the list starts again at the end':'Loop off: stops at the end');},
-  queue:()=>{const up=S.queue.slice(S.qi+1),t=S.byId.get(curId());if(!t)return;
-    openSheet(`<div class="field"><label>Now playing</label></div>`+sheetHead(t)+`<div class="field"><label>Next up</label></div>`+(up.length?`<div class="list">${up.slice(0,60).map((id,j)=>{const x=S.byId.get(id);return x?`<div class="row" data-act="qjump" data-i="${S.qi+1+j}">${art(x)}<div class="meta"><div class="t">${esc(x.title)}</div><div class="s">${esc(x.artist)}</div></div><span class="dur">${fmt(x.duration)}</span></div>`:'';}).join('')}</div><div class="sh-acts"><button class="pill" data-act="qclear">Clear upcoming</button></div>`:`<p class="muted">Nothing after this song${S.repeat==='all'?'. The list starts again from the top.':'.'}</p>`));},
-  qjump:el=>{closeSheet();loadIdx(+el.dataset.i,true);},
-  qclear:()=>{S.queue=S.queue.slice(0,S.qi+1);S.base=S.queue.slice();closeSheet();updateNow();savePrefs();prepareNext();toast('Queue cleared');},
+  queue:()=>{if(!S.byId.get(curId()))return;openSheet('<div id="qwrap"></div>','queue');renderQueue();},
+  qjump:(el,e)=>{if(e&&e.target.closest('.qh,.qx'))return;closeSheet();loadIdx(+el.dataset.i,true);},
+  qrm:el=>{const i=+el.dataset.i;S.queue.splice(i,1);if(!S.shuffle)S.base=S.queue.slice();afterQueueChange();toast('Removed from queue');},
+  qclear:()=>{S.queue=S.queue.slice(0,S.qi+1);S.base=S.queue.slice();afterQueueChange();toast('Queue cleared');},
 };
 document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const f=A[el.dataset.act];if(f){e.stopPropagation();f(el,e);}});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[role="button"][data-act]')){e.preventDefault();e.target.click();}if(e.key==='Escape'){closeSheet();closePlayer();}});
