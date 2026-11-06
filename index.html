@@ -427,7 +427,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='20';
+const VERSION='21';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -775,10 +775,10 @@ function render(){
   else if(v.type==='library'){top.innerHTML=`<h1>Your Library</h1>${imp}`;main.innerHTML=libraryHTML();fillStorage();}
   else if(v.type==='wrapped'){top.innerHTML=`${back}<h1 style="font-size:19px">Kazeta Wrapped</h1>`;main.innerHTML='<div id="wrap"></div>';renderWrapped();}
   else{top.innerHTML=`${back}<h1 style="font-size:19px">${esc(detailTitle(v))}</h1>`;main.innerHTML=detailHTML(v);}
-  main.classList.toggle('paused',audio.paused);
+  main.classList.toggle('paused',isPaused());
 }
 function playCtrls(k){
-  const l=LISTS[k]||[],from=l.from,live=from&&S.from===from&&l.includes(curId())&&!audio.paused;
+  const l=LISTS[k]||[],from=l.from,live=from&&S.from===from&&l.includes(curId())&&!isPaused();
   const cap=(S.shuffle?'Shuffled':'In order')+' · '+(S.repeat==='all'?'starts again at the end':S.repeat==='one'?'repeats one song':'stops at the end');
   return `<div class="pc2">
     <div class="pc-modes" role="group" aria-label="Playback mode">
@@ -1007,7 +1007,7 @@ function renderResults(){
   if(al.length)h+=`<h2>Albums</h2><div class="shelf">${al.map(a=>`<button class="cover" data-act="open" data-type="album" data-key="${esc(a.key)}">${art(a.tracks.find(t=>t.artKey)||a.tracks[0],'lg')}<b>${esc(a.name)}</b><small>${esc(a.artist)}</small></button>`).join('')}</div>`;
   box.innerHTML=h||`<p class="muted" style="margin-top:20px">Nothing matches “${esc(S.q)}”.</p>`;
 }
-function markRows(){const id=curId();document.querySelectorAll('.row[data-tid]').forEach(r=>{const on=r.dataset.tid===id;if(on!==r.classList.contains('cur')){r.classList.toggle('cur',on);const t=r.querySelector('.t');const eq=t.querySelector('.eq');if(on&&!eq)t.insertAdjacentHTML('afterbegin','<span class="eq"><i></i><i></i><i></i></span>');if(!on&&eq)eq.remove();}});$('#main').classList.toggle('paused',audio.paused);}
+function markRows(){const id=curId();document.querySelectorAll('.row[data-tid]').forEach(r=>{const on=r.dataset.tid===id;if(on!==r.classList.contains('cur')){r.classList.toggle('cur',on);const t=r.querySelector('.t');const eq=t.querySelector('.eq');if(on&&!eq)t.insertAdjacentHTML('afterbegin','<span class="eq"><i></i><i></i><i></i></span>');if(!on&&eq)eq.remove();}});$('#main').classList.toggle('paused',isPaused());}
 
 /* ---------- playback ---------- */
 function shuffled(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
@@ -1022,7 +1022,7 @@ function playList(ids,i,mode){
 }
 async function loadIdx(i,auto,seekTo){
   const id=S.queue[i],t=S.byId.get(id);if(!t)return;
-  const tok=++playTok;S.qi=i;if(auto){prime();wantPlay=true;}
+  exitSoft();const tok=++playTok;S.qi=i;if(auto){prime();wantPlay=true;}
   let blob=await db.get('blobs',id);
   if(tok!==playTok)return;
   if(!blob){audio.muted=false;toast('That song file is missing. Try importing it again.');return;}
@@ -1041,21 +1041,38 @@ async function loadIdx(i,auto,seekTo){
    play() then "succeeds" but stays silent or errors. So after every resume we check that time is
    actually moving, and if not, reload the same song from storage at the same position. */
 let wantPlay=false,pausedAt=0,pausedPos=0,resumeWD=0,lastRecover=0;
-/* Keep-alive: iOS turns off a web app's sound output shortly after its music pauses in the background.
-   Resuming from headphones / lock screen then plays silently until the app is opened.
-   While paused, a second player loops pure silence so the output stays on (max 30 min, then stops). */
-const ka=new Audio();ka.loop=true;ka.preload='auto';let kaTimer=0;
-(()=>{const sr=8000,n=sr,B=new ArrayBuffer(44+n*2),v=new DataView(B),w=(p,t)=>{for(let i=0;i<t.length;i++)v.setUint8(p+i,t.charCodeAt(i));};
+/* Soft pause: iOS switches off a web app's sound when its music stops in the background, and a
+   resume from headphones / lock screen then plays silently until the app is opened. Switching songs
+   while the player keeps running does work in the background, so "pause" keeps the SAME player
+   running on a silent loop, and "play" switches it back to the song at the saved position.
+   After 30 minutes of pause the player really stops, to save battery. */
+let soft=null,kaTimer=0;
+const silentURL=(()=>{const sr=8000,n=sr*5,B=new ArrayBuffer(44+n*2),v=new DataView(B),w=(p,t)=>{for(let i=0;i<t.length;i++)v.setUint8(p+i,t.charCodeAt(i));};
   w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
-  ka.src=URL.createObjectURL(new Blob([B],{type:'audio/wav'}));})();
-function keepAlive(on){clearTimeout(kaTimer);
-  if(on&&LS.get('keepAlive',true)&&curId()){try{ka.muted=false;const p=ka.play();if(p)p.catch(()=>{});}catch(e){}kaTimer=setTimeout(()=>keepAlive(false),30*60*1000);}
-  else{try{ka.pause();}catch(e){}}
-  if('mediaSession' in navigator)try{navigator.mediaSession.playbackState=audio.paused?'paused':'playing';}catch(e){}}
-function userPause(){wantPlay=false;keepAlive(true);audio.pause();}
+  return URL.createObjectURL(new Blob([B],{type:'audio/wav'}));})();
+const isPaused=()=>audio.paused||!!soft;
+const songTime=()=>soft?soft.pos:(audio.currentTime||0);
+const songDur=()=>soft?((S.byId.get(curId())||{}).duration||0):(audio.duration||(S.byId.get(curId())||{}).duration||0);
+function setSongTime(x){if(soft){soft.pos=x;updateTime();}else audio.currentTime=x;}
+function msState(){if('mediaSession' in navigator)try{navigator.mediaSession.playbackState=isPaused()?'paused':'playing';}catch(e){}}
+function exitSoft(){if(!soft)return;soft=null;audio.loop=false;clearTimeout(kaTimer);}
+function enterSoft(){
+  soft={pos:audio.currentTime||0};pausedAt=Date.now();pausedPos=soft.pos;saveListen();
+  audio.loop=true;audio.src=silentURL;const p=audio.play();if(p)p.catch(()=>{});
+  clearTimeout(kaTimer);kaTimer=setTimeout(()=>{if(soft)audio.pause();},30*60*1000);
+  updatePlayBtns();markRows();updateTime();savePrefs();msState();syncPlayBig();
+}
+function userPause(){wantPlay=false;
+  if(soft||audio.paused||!curId()||!curURL||!LS.get('keepAlive',true)){audio.pause();msState();return;}
+  enterSoft();}
 function resume(){
   if(!curId()){toggle();return;}
-  wantPlay=true;audio.muted=false;audio.volume=1;keepAlive(false);
+  wantPlay=true;audio.muted=false;audio.volume=1;
+  if(soft){const pos=soft.pos;exitSoft();const tk=++playTok;
+    audio.src=curURL;audio.addEventListener('loadedmetadata',()=>{try{audio.currentTime=pos;}catch(e){}lastT=pos;},{once:true});
+    const pp=audio.play();if(pp)pp.catch(()=>{});lastT=pos;
+    clearTimeout(resumeWD);resumeWD=setTimeout(()=>{if(tk!==playTok||!wantPlay)return;if(audio.paused||audio.readyState<2||audio.currentTime<0.2)reloadCurrent(true);},2500);
+    updatePlayBtns();markRows();msState();syncPlayBig();return;}
   const tok=playTok,t0=audio.currentTime,long=Date.now()-pausedAt>15000;
   const p=audio.play();if(p)p.catch(()=>{if(tok===playTok&&wantPlay)reloadCurrent(true);});
   clearTimeout(resumeWD);
@@ -1063,7 +1080,7 @@ function resume(){
 }
 async function reloadCurrent(play){
   const id=curId(),t=S.byId.get(id);if(!t)return;lastRecover=Date.now();
-  const pos=(audio.currentTime>0?audio.currentTime:pausedPos)||0,tok=++playTok;
+  const pos=soft?soft.pos:((audio.currentTime>0?audio.currentTime:pausedPos)||0);exitSoft();const tok=++playTok;
   let blob=await db.get('blobs',id);if(!blob||tok!==playTok)return;
   blob=await playableBlob(t,blob);if(tok!==playTok)return;
   if(curURL)URL.revokeObjectURL(curURL);curURL=URL.createObjectURL(blob);
@@ -1072,14 +1089,13 @@ async function reloadCurrent(play){
   audio.load();
   if(play){wantPlay=true;const p=audio.play();if(p)p.catch(()=>{});}
 }
-audio.addEventListener('pause',()=>{pausedAt=Date.now();pausedPos=audio.currentTime||pausedPos;if(wantPlay&&!audio.ended&&ka.paused)keepAlive(true);});
-audio.addEventListener('playing',()=>{if(!ka.paused)keepAlive(false);});
-function toggle(){if(!audio.src||S.qi<0){if(S.tracks.length){const ids=[...S.tracks].sort(byTitle).map(t=>t.id);playList(ids,0);}return;}if(audio.paused)resume();else userPause();}
+audio.addEventListener('pause',()=>{if(soft)return;pausedAt=Date.now();pausedPos=audio.currentTime||pausedPos;});
+function toggle(){if(!audio.src||S.qi<0){if(S.tracks.length){const ids=[...S.tracks].sort(byTitle).map(t=>t.id);playList(ids,0);}return;}if(isPaused())resume();else userPause();}
 function nextIndex(user){if(S.qi+1<S.queue.length)return S.qi+1;if((S.repeat==='all'||user)&&S.queue.length)return 0;return -1;}
 function next(user=true){
   if(S.qi<0)return;
   const n=nextIndex(user);
-  if(n<0){wantPlay=false;audio.pause();audio.currentTime=0;keepAlive(false);updateNow();return;}
+  if(n<0){wantPlay=false;exitSoft();audio.pause();audio.currentTime=0;updateNow();return;}
   if(pre&&pre.id===S.queue[n])return playPrepared(n);
   loadIdx(n,true);
 }
@@ -1099,13 +1115,13 @@ async function prepareNext(){
     if(tok!==preTok)return;pre={id,url:URL.createObjectURL(blob)};}catch(e){}
 }
 function playPrepared(n){
-  const t=S.byId.get(S.queue[n]);++playTok;S.qi=n;wantPlay=true;
+  const t=S.byId.get(S.queue[n]);exitSoft();++playTok;S.qi=n;wantPlay=true;
   if(curURL)URL.revokeObjectURL(curURL);curURL=pre.url;pre=null;
   audio.muted=false;audio.src=curURL;const p=audio.play();if(p)p.catch(()=>{});startListen();
   if(t){t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
   updateNow();markRows();savePrefs();setMS(t);prepareNext();
 }
-function prev(){if(audio.currentTime>3||S.qi<=0){audio.currentTime=0;if(audio.paused)audio.play().catch(()=>{});return;}loadIdx(S.qi-1,true);}
+function prev(){if(songTime()>3||S.qi<=0){if(soft){soft.pos=0;resume();return;}audio.currentTime=0;if(audio.paused)resume();return;}loadIdx(S.qi-1,true);}
 function setShuffle(on){
   const cur=curId();S.shuffle=on;LS.set('shuffle',on);
   if(cur){if(!S.base.length)S.base=S.queue.slice();
@@ -1114,11 +1130,11 @@ function setShuffle(on){
   updateNow();savePrefs();prepareNext();render();toast(on?'Shuffle on':'Shuffle off');
 }
 function cycleRepeat(){S.repeat={off:'all',all:'one',one:'off'}[S.repeat];LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast({off:'Repeat off',all:'Repeating the whole list',one:'Repeating this song'}[S.repeat]);}
-audio.addEventListener('ended',()=>{if(!audio.src||audio.src.startsWith('data:'))return;if(S.repeat==='one'){audio.currentTime=0;startListen();audio.play().catch(()=>{});}else next(false);});
-audio.addEventListener('play',()=>{updatePlayBtns();markRows();syncPlayBig();if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';});
-audio.addEventListener('pause',()=>{updatePlayBtns();markRows();savePrefs();syncPlayBig();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';});
-audio.addEventListener('loadedmetadata',()=>{const t=S.byId.get(curId());if(t&&isFinite(audio.duration)&&Math.abs((t.duration||0)-audio.duration)>1){t.duration=audio.duration;db.put('tracks',t).catch(()=>{});}updateTime();});
-audio.addEventListener('error',()=>{if(!audio.src||audio.src.startsWith('data:'))return;
+audio.addEventListener('ended',()=>{if(soft||!audio.src||audio.src.startsWith('data:'))return;if(S.repeat==='one'){audio.currentTime=0;startListen();audio.play().catch(()=>{});}else next(false);});
+audio.addEventListener('play',()=>{updatePlayBtns();markRows();syncPlayBig();msState();});
+audio.addEventListener('pause',()=>{updatePlayBtns();markRows();savePrefs();syncPlayBig();msState();});
+audio.addEventListener('loadedmetadata',()=>{if(soft)return;const t=S.byId.get(curId());if(t&&isFinite(audio.duration)&&Math.abs((t.duration||0)-audio.duration)>1){t.duration=audio.duration;db.put('tracks',t).catch(()=>{});}updateTime();});
+audio.addEventListener('error',()=>{if(soft||!audio.src||audio.src.startsWith('data:'))return;
   if(Date.now()-lastRecover>10000&&curId()){reloadCurrent(wantPlay);return;}const t=S.byId.get(curId());const code=audio.error?audio.error.code:0;const name=t?`“${t.title}”`:'this song';
   let msg=code===4?`This phone can't play ${name}${t&&t.ext?' ('+t.ext.toUpperCase()+' file)':''}.`:`Couldn't load ${name} (error ${code}).`;
   if(!isPWAFile)msg+=' The preview inside Claude may block audio; the homescreen version doesn\'t.';
@@ -1129,13 +1145,13 @@ const needSecs=id=>{const d=(S.byId.get(id)||{}).duration||60;return Math.min(30
 function saveListen(){if(!L||L.secs<needSecs(L.id)||L.secs-L.saved<1)return;L.saved=L.secs;const t=S.byId.get(L.id)||{};
   db.put('plays',{id:L.pid,tid:L.id,at:L.at,secs:Math.round(L.secs),title:t.title||'',artist:t.artist||'',album:t.album||''}).catch(()=>{});}
 function startListen(){saveListen();const id=curId();L=id?{id,pid:uid(),at:Date.now(),secs:0,saved:0}:null;lastT=audio.currentTime||0;}
-function tickListen(){const now=audio.currentTime||0;if(!audio.paused&&L&&L.id===curId()){const d=now-lastT;if(d>0&&d<2.5)L.secs+=d;
+function tickListen(){if(soft)return;const now=audio.currentTime||0;if(!audio.paused&&L&&L.id===curId()){const d=now-lastT;if(d>0&&d<2.5)L.secs+=d;
   if(L.secs>=needSecs(L.id)&&(!L.saved||L.secs-L.saved>=15))saveListen();}lastT=now;}
-audio.addEventListener('seeked',()=>{lastT=audio.currentTime||0;});
+audio.addEventListener('seeked',()=>{if(!soft)lastT=audio.currentTime||0;});
 audio.addEventListener('pause',()=>saveListen());
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveListen();});
 let lastSave=0,dragging=false;
-audio.addEventListener('timeupdate',()=>{
+audio.addEventListener('timeupdate',()=>{if(soft)return;
   /* Switch songs just BEFORE the current one ends. While audio is still playing, iOS keeps the
      locked-screen app awake and allows the switch; once it has ended, iOS may already have suspended us. */
   if(!audio.paused&&isFinite(audio.duration)&&audio.duration>3&&audio.duration-audio.currentTime<0.7){
@@ -1144,16 +1160,16 @@ audio.addEventListener('timeupdate',()=>{
   }
   tickListen();updateTime();const n=Date.now();if(n-lastSave>5000){lastSave=n;savePrefs();}});
 function updateTime(){
-  const d=audio.duration||(S.byId.get(curId())||{}).duration||0,c=audio.currentTime||0,p=d?c/d*100:0;
+  const d=songDur(),c=songTime(),p=d?c/d*100:0;
   $('#miniProg').style.width=p+'%';
   if(!dragging){const s=$('#seek');s.value=d?Math.round(c/d*1000):0;s.style.setProperty('--p',p+'%');$('#tCur').textContent=fmt(c);}
   $('#tDur').textContent=fmt(d);
-  if('mediaSession' in navigator&&navigator.mediaSession.setPositionState&&isFinite(audio.duration)&&audio.duration>0){try{navigator.mediaSession.setPositionState({duration:audio.duration,position:Math.min(c,audio.duration),playbackRate:1});}catch(e){}}
+  if(!soft&&'mediaSession' in navigator&&navigator.mediaSession.setPositionState&&isFinite(audio.duration)&&audio.duration>0){try{navigator.mediaSession.setPositionState({duration:audio.duration,position:Math.min(c,audio.duration),playbackRate:1});}catch(e){}}
 }
 const seek=$('#seek');
-seek.addEventListener('input',()=>{dragging=true;const d=audio.duration||0;const c=seek.value/1000*d;seek.style.setProperty('--p',seek.value/10+'%');$('#tCur').textContent=fmt(c);});
-seek.addEventListener('change',()=>{const d=audio.duration||0;if(d)audio.currentTime=seek.value/1000*d;dragging=false;});
-function updatePlayBtns(){const pl=!audio.paused;$('#bPlay').innerHTML=ic(pl?'pause':'play',32);$('#bPlay').setAttribute('aria-label',pl?'Pause':'Play');$('#miniPlay').innerHTML=ic(pl?'pause':'play',26);$('#miniPlay').setAttribute('aria-label',pl?'Pause':'Play');}
+seek.addEventListener('input',()=>{dragging=true;const d=songDur();const c=seek.value/1000*d;seek.style.setProperty('--p',seek.value/10+'%');$('#tCur').textContent=fmt(c);});
+seek.addEventListener('change',()=>{const d=songDur();if(d)setSongTime(seek.value/1000*d);dragging=false;});
+function updatePlayBtns(){const pl=!isPaused();$('#bPlay').innerHTML=ic(pl?'pause':'play',32);$('#bPlay').setAttribute('aria-label',pl?'Pause':'Play');$('#miniPlay').innerHTML=ic(pl?'pause':'play',26);$('#miniPlay').setAttribute('aria-label',pl?'Pause':'Play');}
 function updateNow(){
   const t=S.byId.get(curId());$('#mini').hidden=!t;
   if(!t){closePlayer();return;}
@@ -1177,12 +1193,12 @@ function setMS(t){
    song loads, so they are (re)applied on every song change. */
 function setMSHandlers(){if(!('mediaSession' in navigator))return;const ms=navigator.mediaSession,H=(a,f)=>{try{ms.setActionHandler(a,f);}catch(e){}};
   H('seekbackward',null);H('seekforward',null);
-  H('play',()=>resume());H('pause',()=>{if(audio.paused&&curId())resume();else userPause();});H('stop',()=>{userPause();keepAlive(false);});
-  H('previoustrack',()=>{if(audio.currentTime>3)audio.currentTime=0;prev();});H('nexttrack',()=>next());
-  H('seekto',d=>{if(d.seekTime!=null){audio.currentTime=d.seekTime;tickListen();}});}
+  H('play',()=>resume());H('pause',()=>{if(isPaused()&&curId())resume();else userPause();});H('stop',()=>userPause());
+  H('previoustrack',()=>prev());H('nexttrack',()=>next());
+  H('seekto',d=>{if(d.seekTime!=null){setSongTime(d.seekTime);if(!soft)tickListen();}});}
 setMSHandlers();
 audio.addEventListener('loadedmetadata',setMSHandlers);audio.addEventListener('play',setMSHandlers);
-function savePrefs(){LS.set('session',{queue:S.queue,base:S.base,qi:S.qi,from:S.from,time:audio.currentTime||0});}
+function savePrefs(){LS.set('session',{queue:S.queue,base:S.base,qi:S.qi,from:S.from,time:songTime()});}
 
 /* iOS: start playback inside the tap itself (muted) so the later async play() is allowed */
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
@@ -1256,7 +1272,7 @@ async function savePl(p){p.updated=Date.now();await db.put('playlists',p);S.play
 async function askPersist(){try{if(navigator.storage&&navigator.storage.persist&&!(await navigator.storage.persisted()))await navigator.storage.persist();}catch(e){}}
 async function deleteTrack(id){
   const t=S.byId.get(id);if(!t)return;
-  if(curId()===id){audio.pause();audio.removeAttribute('src');audio.load();}
+  if(curId()===id){exitSoft();audio.pause();audio.removeAttribute('src');audio.load();}
   const qi=S.queue.indexOf(id);S.queue=S.queue.filter(x=>x!==id);S.base=S.base.filter(x=>x!==id);if(qi>=0&&qi<S.qi)S.qi--;if(qi===S.qi)S.qi=-1;
   await db.del('blobs',id);await db.del('tracks',id);
   for(const p of S.playlists)if(p.ids.includes(id)){p.ids=p.ids.filter(x=>x!==id);await db.put('playlists',p);}
@@ -1342,7 +1358,7 @@ function swipeSkip(el,slideEl){let x0=null,y0=0;
   el.addEventListener('touchmove',e=>{if(x0==null)return;const dx=e.touches[0].clientX-x0,dy=e.touches[0].clientY-y0;if(Math.abs(dx)>Math.abs(dy)&&slideEl)slideEl.style.transform=`translateX(${dx*0.6}px)`;},{passive:true});
   el.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;
     if(slideEl){slideEl.style.transition='transform .2s';slideEl.style.transform='';setTimeout(()=>{slideEl.style.transition='';},220);}
-    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.3){swiped=true;setTimeout(()=>{swiped=false;},400);if(dx<0)next();else{if(audio.currentTime>3)audio.currentTime=0;prev();}}},{passive:true});}
+    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.3){swiped=true;setTimeout(()=>{swiped=false;},400);if(dx<0)next();else prev();}},{passive:true});}
 swipeSkip($('#mini'),$('#mini .meta'));swipeSkip($('#phArt'),$('#phArt'));
 /* swipe down to close the player */
 (()=>{let y0=null;const p=$('#player');p.addEventListener('touchstart',e=>{if(e.target.closest('input'))return;y0=e.touches[0].clientY;},{passive:true});p.addEventListener('touchend',e=>{if(y0!=null&&e.changedTouches[0].clientY-y0>110)closePlayer();y0=null;},{passive:true});})();
