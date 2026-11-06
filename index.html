@@ -421,7 +421,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='15';
+const VERSION='16';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -961,7 +961,7 @@ async function fillStorage(){fillLevel();
   const m=$('#stM'),t=$('#stT'),b=$('#stB');if(m)m.style.width=Math.max(2,pct)+'%';if(t)t.textContent=txt;if(b)b.innerHTML=btn;
 }
 function detailHTML(v){
-  const list=viewTracks(v);let artH,kind,name,sub,extra='';
+  let list=viewTracks(v);let artH,kind,name,sub,extra='';
   if(v.type==='album'){const single=v.key.startsWith('single|#|');const [n0,a0]=v.key.split('|#|');const n=single?(list[0]?list[0].title:'Single'):n0,a=single?(list[0]?list[0].artist:''):a0;artH=art(list.find(t=>t.artKey)||list[0],'lg');kind=single?'Single':'Album';name=n;sub=`${esc(a)} · ${plural(list.length,'song')} · ${total(list)}`;}
   else if(v.type==='artist'){artH=art(artistTrack(v.key),'lg','round');kind='Artist';name=artistName(v.key);sub=`${plural(list.length,'song')} · ${total(list)}`;}
   else if(v.type==='imported'){artH=list.length?mosaic(list):likedArt('lg');kind='Import';name='Just imported';
@@ -1115,12 +1115,19 @@ function updateNow(){
   updatePlayBtns();updateTime();
 }
 function setMS(t){
-  if(!('mediaSession' in navigator)||!t)return;
+  if(!('mediaSession' in navigator)||!t)return;setMSHandlers();
   try{const u=t.artKey&&S.artURL.get(t.artKey);navigator.mediaSession.metadata=new MediaMetadata({title:t.title,artist:t.artist,album:t.album||'',artwork:u?[{src:u,sizes:'512x512',type:'image/jpeg'}]:[]});}catch(e){}
 }
-if('mediaSession' in navigator){const ms=navigator.mediaSession,H=(a,f)=>{try{ms.setActionHandler(a,f);}catch(e){}};
-  H('play',()=>audio.play().catch(()=>{}));H('pause',()=>audio.pause());H('previoustrack',()=>prev());H('nexttrack',()=>next());
-  H('seekto',d=>{if(d.seekTime!=null)audio.currentTime=d.seekTime;});}
+/* Lock screen controls: previous / next track instead of iOS's default ±10 s buttons.
+   iOS shows seek buttons unless they are explicitly turned off, and can reset handlers when a new
+   song loads, so they are (re)applied on every song change. */
+function setMSHandlers(){if(!('mediaSession' in navigator))return;const ms=navigator.mediaSession,H=(a,f)=>{try{ms.setActionHandler(a,f);}catch(e){}};
+  H('seekbackward',null);H('seekforward',null);
+  H('play',()=>audio.play().catch(()=>{}));H('pause',()=>audio.pause());H('stop',()=>audio.pause());
+  H('previoustrack',()=>{if(audio.currentTime>3)audio.currentTime=0;prev();});H('nexttrack',()=>next());
+  H('seekto',d=>{if(d.seekTime!=null){audio.currentTime=d.seekTime;tickListen();}});}
+setMSHandlers();
+audio.addEventListener('loadedmetadata',setMSHandlers);audio.addEventListener('play',setMSHandlers);
 function savePrefs(){LS.set('session',{queue:S.queue,base:S.base,qi:S.qi,from:S.from,time:audio.currentTime||0});}
 
 /* iOS: start playback inside the tap itself (muted) so the later async play() is allowed */
