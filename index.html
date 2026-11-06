@@ -219,6 +219,7 @@ h2{font:700 19px/1.2 var(--display);letter-spacing:-.01em;margin:26px 0 12px}
 .wrcard.ready{margin:0 0 12px;background:linear-gradient(120deg,#5b2a9e,#d9476b 55%,#f5a524);animation:glow 2.4s ease-in-out infinite}
 @keyframes glow{50%{box-shadow:0 0 0 3px rgba(245,165,36,.45)}}
 @media (prefers-reduced-motion:reduce){.pop{animation:none;opacity:1;transform:none}.wrcard.ready{animation:none}}
+.lvrow{display:flex;align-items:center;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:4px}.lvrow>div{flex:1;min-width:0}.lvrow b{font:700 15px var(--display)}
 .textbtns{display:flex;gap:6px;flex-wrap:wrap}
 
 /* search */
@@ -413,7 +414,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='11';
+const VERSION='12';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -504,6 +505,82 @@ function parseFLAC(b){
     p=s+len;}
   return T;
 }
+/* ---------- volume levelling (like Spotify's "Normalize volume") ----------
+   1. Measure each song's loudness (EBU R128 / LUFS, the same scale Spotify uses) once, in the background.
+   2. When a song is loaded for playback, adjust the gain stored inside the file itself:
+      MP3: the per-frame "global_gain" value (1.5 dB steps, like MP3Gain; no re-encoding),
+      WAV: the samples directly. iOS ignores audio.volume, and Web Audio stops on the lock screen,
+      so changing the file is the only method that keeps working with the screen off. */
+const TARGET_LUFS=-14;
+function biq(x,[b0,b1,b2,a1,a2]){const y=new Float32Array(x.length);let x1=0,x2=0,y1=0,y2=0;for(let i=0;i<x.length;i++){const v=x[i],o=b0*v+b1*x1+b2*x2-a1*y1-a2*y2;x2=x1;x1=v;y2=y1;y1=o;y[i]=o;}return y;}
+function kCoefs(sr){
+  let f=1681.974450955533,G=3.999843853973347,Q=0.7071752369554196,A=Math.pow(10,G/40),w=2*Math.PI*f/sr,al=Math.sin(w)/(2*Q),c=Math.cos(w),sA=2*Math.sqrt(A)*al,a0=(A+1)-(A-1)*c+sA;
+  const hs=[A*((A+1)+(A-1)*c+sA)/a0,-2*A*((A-1)+(A+1)*c)/a0,A*((A+1)+(A-1)*c-sA)/a0,2*((A-1)-(A+1)*c)/a0,((A+1)-(A-1)*c-sA)/a0];
+  f=38.13547087602444;Q=0.5003270373238773;w=2*Math.PI*f/sr;al=Math.sin(w)/(2*Q);c=Math.cos(w);a0=1+al;
+  return [hs,[(1+c)/2/a0,-(1+c)/a0,(1+c)/2/a0,-2*c/a0,(1-al)/a0]];}
+function loudness(buf){
+  const sr=buf.sampleRate,nch=Math.min(2,buf.numberOfChannels),seg=Math.round(sr*0.1),[hs,hp]=kCoefs(sr),nseg=Math.floor(buf.length/seg),segE=new Float64Array(nseg);let peak=0;
+  for(let c=0;c<nch;c++){const raw=buf.getChannelData(c);for(let i=0;i<raw.length;i++){const a=raw[i]<0?-raw[i]:raw[i];if(a>peak)peak=a;}
+    const y=biq(biq(raw,hs),hp);for(let s=0;s<nseg;s++){let e=0;const o=s*seg;for(let i=0;i<seg;i++){const v=y[o+i];e+=v*v;}segE[s]+=e;}}
+  const L=z=>-0.691+10*Math.log10(z),blocks=[];for(let s=0;s+3<nseg;s++)blocks.push((segE[s]+segE[s+1]+segE[s+2]+segE[s+3])/(4*seg));
+  let g=blocks.filter(z=>z>0&&L(z)>-70);if(!g.length)return {lufs:-70,peak};
+  const rel=L(g.reduce((a,z)=>a+z,0)/g.length)-10;g=g.filter(z=>L(z)>rel);
+  return {lufs:L(g.reduce((a,z)=>a+z,0)/g.length),peak};}
+function gainFor(lufs,peak){let g=TARGET_LUFS-lufs;const head=peak>0?-20*Math.log10(peak):0;if(g>0)g=Math.min(g,head,6);return Math.round(Math.max(g,-15)*10)/10;}
+function getBits(b,pos,n){let v=0;for(let i=0;i<n;i++){const q=pos+i;v=(v<<1)|((b[q>>3]>>(7-(q&7)))&1);}return v;}
+function setBits(b,pos,n,v){for(let i=0;i<n;i++){const q=pos+i,m=1<<(7-(q&7));if((v>>(n-1-i))&1)b[q>>3]|=m;else b[q>>3]&=~m;}}
+function mp3Gain(b,steps){
+  if(!steps)return b;let p=0;
+  if(b[0]===0x49&&b[1]===0x44&&b[2]===0x33){p=10+ss(b,6);if(b[5]&0x10)p+=10;}
+  const BR1=[0,32,40,48,56,64,80,96,112,128,160,192,224,256,320],BR2=[0,8,16,24,32,40,48,56,64,80,96,112,128,144,160],SR={3:[44100,48000,32000],2:[22050,24000,16000],0:[11025,12000,8000]};
+  const n=b.length;let first=true;
+  while(p+4<n){
+    if(b[p]!==0xFF||(b[p+1]&0xE0)!==0xE0){p++;continue;}
+    const ver=(b[p+1]>>3)&3,layer=(b[p+1]>>1)&3,prot=b[p+1]&1,bri=b[p+2]>>4,sri=(b[p+2]>>2)&3,pad=(b[p+2]>>1)&1,mode=b[p+3]>>6;
+    if(ver===1||layer!==1||bri===0||bri===15||sri===3){p++;continue;}
+    const m1=ver===3,br=(m1?BR1:BR2)[bri]*1000,sr=SR[ver][sri],len=(m1?Math.floor(144*br/sr):Math.floor(72*br/sr))+pad;
+    if(p+len>n)break;
+    if(p+len+1<n&&!(b[p+len]===0xFF&&(b[p+len+1]&0xE0)===0xE0)){p++;continue;}
+    const nch=mode===3?1:2,s=p+4+(prot?0:2),side=m1?(nch===1?17:32):(nch===1?9:17),o=s+side;
+    const tag=String.fromCharCode(b[o],b[o+1],b[o+2],b[o+3]);
+    if(!(first&&(tag==='Xing'||tag==='Info'))){
+      let bit=s*8+(m1?9+(nch===1?5:3)+4*nch:8+(nch===1?1:2));const grs=m1?2:1,blk=m1?59:63;
+      for(let g=0;g<grs;g++)for(let c=0;c<nch;c++){const at=bit+21,v=getBits(b,at,8);setBits(b,at,8,Math.max(0,Math.min(255,v+steps)));bit+=blk;}
+    }
+    first=false;p+=len;
+  }
+  return b;}
+function wavGain(b,db){
+  const v=new DataView(b.buffer,b.byteOffset,b.byteLength);if(b.length<12||v.getUint32(0)!==0x52494646)return b;let p=12,fmt=null;const k=Math.pow(10,db/20);
+  while(p+8<=b.length){const id=String.fromCharCode(b[p],b[p+1],b[p+2],b[p+3]),sz=v.getUint32(p+4,true);
+    if(id==='fmt ')fmt={f:v.getUint16(p+8,true),bits:v.getUint16(p+22,true)};
+    else if(id==='data'&&fmt&&fmt.f===1&&fmt.bits===16){const e=Math.min(p+8+sz,b.length);for(let i=p+8;i+1<e;i+=2){let x=v.getInt16(i,true)*k;x=x>32767?32767:x<-32768?-32768:x;v.setInt16(i,x,true);}return b;}
+    p+=8+sz+(sz&1);}
+  return b;}
+const isMP3=t=>t&&(t.ext==='mp3'||/mpeg|mp3/.test(t.type||''));
+const isWAV=t=>t&&(t.ext==='wav'||/wav/.test(t.type||''));
+const canLevel=t=>isMP3(t)||isWAV(t);
+async function playableBlob(t,blob){
+  let b;try{b=new Uint8Array(await blob.arrayBuffer());}catch(e){return blob;}
+  if(LS.get('normalize',true)&&t&&t.gain){try{if(isMP3(t))b=mp3Gain(b,Math.round(t.gain/1.5));else if(isWAV(t))b=wavGain(b,t.gain);}catch(e){}}
+  return new Blob([b],{type:(t&&t.type)||blob.type||'audio/mpeg'});}
+let anaBusy=false;
+async function analyzeLibrary(){
+  if(anaBusy)return;anaBusy=true;let did=0;
+  try{const Ctx=window.OfflineAudioContext||window.webkitOfflineAudioContext;if(!Ctx)return;
+    for(const t of S.tracks.filter(t=>t.gain==null&&canLevel(t))){
+      if(!S.byId.has(t.id))continue;
+      try{const blob=await db.get('blobs',t.id);if(!blob)continue;const ab=await blob.arrayBuffer();const ctx=new Ctx(1,1,44100);
+        const buf=await new Promise((res,rej)=>{const pr=ctx.decodeAudioData(ab,res,rej);if(pr&&pr.then)pr.then(res,rej);});
+        const m=loudness(buf);t.lufs=Math.round(m.lufs*10)/10;t.peak=Math.round(m.peak*1000)/1000;t.gain=gainFor(m.lufs,m.peak);}
+      catch(e){t.gain=0;t.lufs=null;}
+      await db.put('tracks',t).catch(()=>{});did++;fillLevel();
+      await new Promise(r=>setTimeout(r,120));
+    }}finally{anaBusy=false;}
+  if(did&&pre){URL.revokeObjectURL(pre.url);pre=null;prepareNext();}
+}
+function fillLevel(){const el=$('#stLevel');if(!el)return;const on=LS.get('normalize',true),lv=S.tracks.filter(canLevel),done=lv.filter(t=>t.gain!=null).length,other=S.tracks.length-lv.length;
+  el.innerHTML=`<div class="lvrow"><div><b>Even out volume</b><div class="muted small">${on?(done<lv.length?`Measuring songs… ${done} of ${lv.length}`:`All ${plural(lv.length,'song')} play at a similar volume`):'Off: songs play at their original volume'}${other&&on?` · ${other} M4A/FLAC ${other===1?'file':'files'} can't be adjusted`:''}</div></div><button class="pill${on?' amber':''}" data-act="levelToggle" aria-pressed="${on}">${on?'On':'Off'}</button></div>`;}
 const EXT_MIME={mp3:'audio/mpeg',m4a:'audio/mp4',aac:'audio/aac',wav:'audio/wav',flac:'audio/flac',ogg:'audio/ogg',opus:'audio/ogg',aif:'audio/aiff',aiff:'audio/aiff'};
 const extOf=n=>(n.match(/\.([a-z0-9]+)$/i)||[,''])[1].toLowerCase();
 
@@ -553,7 +630,7 @@ async function importFiles(files){
   render();$('#main').scrollTop=0;
   if(full)toast('Storage for the app is full. Delete some songs to add more.');
   else toast(`Added ${plural(added,'song')}`+(skipped?` · ${skipped} already in library`:'')+(failed?` · ${failed} couldn't be read`:''));
-  askPersist();
+  askPersist();analyzeLibrary();
 }
 
 /* ---------- demo songs (synthesised on the phone) ---------- */
@@ -594,7 +671,7 @@ async function addDemos(){
     const t={id:uid(),sig:'demo|'+title,name:title+'.wav',size:s.blob.size,ext:'wav',type:'audio/wav',title,artist:'Kazeta Demo',album:'Demo Tape',albumArtist:'',track:i+1,
       added:Date.now()+i,plays:0,lastPlayed:0,liked:false,duration:s.duration,artKey:ak,color:[214,120,40],demo:true};
     await db.put('blobs',s.blob,t.id);await db.put('tracks',t);busy(true,'Making demo songs',i+1,3);}
-  busy(false);await loadAll();render();toast('Added 3 demo songs. Remove them any time in Library.');
+  busy(false);await loadAll();render();analyzeLibrary();toast('Added 3 demo songs. Remove them any time in Library.');
 }
 
 /* ---------- derived collections ---------- */
@@ -827,11 +904,11 @@ function libraryHTML(){
     ${S.playlists.map(p=>`<div class="row" data-act="open" data-type="playlist" data-key="${p.id}" role="button" tabindex="0">${plArt(p,'md')}<div class="meta"><div class="t">${esc(p.name)}</div><div class="s">Playlist · ${plural(p.ids.length,'song')}</div></div></div>`).join('')}</div>`;}
   const demos=S.tracks.filter(t=>t.demo).length;
   h+=`<button class="wrcard" style="margin-top:24px" data-act="open" data-type="wrapped"><span class="meta"><b>Kazeta Wrapped</b><small>Your listening stats</small></span>${ic('back',20).replace('M15 5l-7 7 7 7','M9 5l7 7-7 7')}</button>`;
-  h+=`<div class="card" id="storage"><h4>Storage on this phone <span class="muted small" style="font-weight:500">· Kazeta v${VERSION}</span></h4><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns"><span id="stB" style="display:contents"></span><button class="pill" data-act="update">${ic('import',16)}Check for updates</button></div>${demos?`<div class="textbtns"><button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button></div>`:''}</div>`;
+  h+=`<div class="card" id="storage"><div id="stLevel"></div><h4 style="margin-top:6px">Storage on this phone <span class="muted small" style="font-weight:500">· Kazeta v${VERSION}</span></h4><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns"><span id="stB" style="display:contents"></span><button class="pill" data-act="update">${ic('import',16)}Check for updates</button></div>${demos?`<div class="textbtns"><button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button></div>`:''}</div>`;
   return h;
 }
 const mb=b=>b>=1e9?(b/1e9).toFixed(1)+' GB':Math.round(b/1e6)+' MB';
-async function fillStorage(){
+async function fillStorage(){fillLevel();
   const lib=S.tracks.reduce((a,t)=>a+(t.size||0),0);let txt=`Your songs: ${mb(lib)}.`,pct=0,btn='';
   try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();if(e.quota){pct=Math.min(100,e.usage/e.quota*100);txt+=` About ${mb(Math.max(0,e.quota-e.usage))} still free for Kazeta.`;}}}catch(e){}
   let persisted=false;try{persisted=navigator.storage&&navigator.storage.persisted?await navigator.storage.persisted():false;}catch(e){}
@@ -891,7 +968,7 @@ async function loadIdx(i,auto,seekTo){
   if(!blob){audio.muted=false;toast('That song file is missing. Try importing it again.');return;}
   /* iOS Safari often can't play a Blob read back from IndexedDB directly ("WebKitBlobResource" bug).
      Copying it into a fresh Blob with an explicit audio type fixes that. */
-  try{const buf=await blob.arrayBuffer();blob=new Blob([buf],{type:t.type||blob.type||EXT_MIME[t.ext]||'audio/mpeg'});}catch(e){}
+  blob=await playableBlob(t,blob);
   if(tok!==playTok)return;
   if(curURL)URL.revokeObjectURL(curURL);curURL=URL.createObjectURL(blob);
   audio.src=curURL;audio.muted=false;startListen();
@@ -920,7 +997,7 @@ async function prepareNext(){
   if(!id)return;
   const tok=++preTok,t=S.byId.get(id);
   try{let blob=await db.get('blobs',id);if(!blob||tok!==preTok)return;
-    try{blob=new Blob([await blob.arrayBuffer()],{type:(t&&t.type)||blob.type||'audio/mpeg'});}catch(e){}
+    blob=await playableBlob(t,blob);
     if(tok!==preTok)return;pre={id,url:URL.createObjectURL(blob)};}catch(e){}
 }
 function playPrepared(n){
@@ -1118,6 +1195,7 @@ const A={
   delYes:async el=>{closeSheet();await deleteTrack(el.dataset.id);updateNow();savePrefs();if(S.stack.length&&!viewTracks(view()).length&&view().type!=='playlist'&&view().type!=='liked')S.stack.pop();render();toast('Song deleted');},
   rmdemo:async()=>{for(const t of S.tracks.filter(t=>t.demo))await deleteTrack(t.id);updateNow();savePrefs();render();toast('Demo songs removed');},
   update:()=>checkUpdate(),
+  levelToggle:()=>{LS.set('normalize',!LS.get('normalize',true));fillLevel();if(pre){URL.revokeObjectURL(pre.url);pre=null;}prepareNext();toast(LS.get('normalize',true)?'Volume levelling on, from the next song':'Volume levelling off, from the next song');if(LS.get('normalize',true))analyzeLibrary();},
   storyReady:()=>{if(S.readyPer)openStory(S.readyPer);},
   storyRoll:()=>{const key=LS.get('wrapRange','week'),[,label,days]=RANGES.find(r=>r[0]===key)||RANGES[0];const now=Date.now();openStory({kind:key,from:now-days*DAY,to:now+1,title:`Your last ${label.toLowerCase()}`,noun:label.toLowerCase(),range:`Last ${label.toLowerCase()}`});},
   wrange:el=>{LS.set('wrapRange',el.dataset.k);renderWrapped();},
@@ -1151,6 +1229,7 @@ $('#file').addEventListener('change',e=>{const f=e.target.files;if(f&&f.length)i
   if(s&&s.queue){S.queue=s.queue.filter(id=>S.byId.has(id));S.base=(s.base||[]).filter(id=>S.byId.has(id));S.from=s.from||'Your library';
     const cur=s.queue[s.qi];S.qi=S.queue.indexOf(cur);if(S.qi>=0)await loadIdx(S.qi,false,s.time);}
   render();updateNow();
+  setTimeout(()=>{if(LS.get('normalize',true))analyzeLibrary();},2500);
   if(isPWAFile&&'serviceWorker' in navigator){
     const hadCtl=!!navigator.serviceWorker.controller;let reloaded=false;
     navigator.serviceWorker.addEventListener('controllerchange',()=>{if(hadCtl&&!reloaded&&audio.paused){reloaded=true;location.reload();}});
