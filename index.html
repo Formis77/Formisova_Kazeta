@@ -139,6 +139,10 @@ h2{font:700 19px/1.2 var(--display);letter-spacing:-.01em;margin:26px 0 12px}
 .ck{display:inline-block;vertical-align:-2px;margin-right:4px}.ck svg{display:inline}
 .ckempty{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);flex:none}
 .opt .ckc{color:inherit}
+.impcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--deck);border-radius:12px;padding:10px 12px 10px 10px;margin-bottom:12px;box-shadow:inset 0 0 0 1.5px var(--tape)}
+.impcard .meta{flex:1;min-width:0;display:flex;flex-direction:column}
+.impcard b{font:700 16px var(--display)}.impcard small{color:var(--mute);font-size:13px}
+.impcard svg{color:var(--tape)}
 .textbtns{display:flex;gap:6px;flex-wrap:wrap}
 
 /* search */
@@ -332,7 +336,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='8';
+const VERSION='9';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -352,7 +356,7 @@ const LS={get(k,d){try{const v=localStorage.getItem('kazeta.'+k);return v==null?
 
 /* ---------- state ---------- */
 const S={tracks:[],byId:new Map(),playlists:[],artURL:new Map(),tab:'home',stack:[],libTab:LS.get('libTab','songs'),q:'',
-  queue:[],base:[],qi:-1,from:'Your library',shuffle:LS.get('shuffle',false),repeat:LS.get('loopDefault5',false)?LS.get('repeat','all'):(LS.set('loopDefault5',true),LS.set('repeat','all'),'all'),loaded:false};
+  lastImport:[],lastImportAt:0,queue:[],base:[],qi:-1,from:'Your library',shuffle:LS.get('shuffle',false),repeat:LS.get('loopDefault5',false)?LS.get('repeat','all'):(LS.set('loopDefault5',true),LS.set('repeat','all'),'all'),loaded:false};
 const audio=new Audio();audio.preload='auto';
 let curURL=null,playTok=0;
 
@@ -459,15 +463,17 @@ async function importFiles(files){
   const list=[...files].filter(f=>/^audio\//.test(f.type)||EXT_MIME[extOf(f.name)]);
   if(!list.length){toast('No music files in that selection');return;}
   busy(true,'Importing',0,list.length);
-  let added=0,skipped=0,failed=0,full=false;
+  let added=0,skipped=0,failed=0,full=false;const newIds=[];
   for(let i=0;i<list.length;i++){
     const f=list[i];
     if(S.tracks.some(t=>t.sig===f.name+'|'+f.size)){skipped++;busy(true,'Importing',i+1,list.length);continue;}
-    try{const {t,blob}=await buildTrack(f);await db.put('blobs',blob,t.id);await db.put('tracks',t);S.tracks.push(t);S.byId.set(t.id,t);added++;}
+    try{const {t,blob}=await buildTrack(f);await db.put('blobs',blob,t.id);await db.put('tracks',t);S.tracks.push(t);S.byId.set(t.id,t);newIds.push(t.id);added++;}
     catch(e){if(e&&e.name==='QuotaExceededError'){full=true;break;}failed++;console.warn(e);}
     busy(true,'Importing',i+1,list.length);
   }
-  busy(false);await loadAll();render();
+  busy(false);await loadAll();
+  if(newIds.length){S.lastImport=newIds;LS.set('lastImport',{ids:newIds,at:Date.now()});S.lastImportAt=Date.now();closePlayer();S.stack=[{type:'imported'}];}
+  render();$('#main').scrollTop=0;
   if(full)toast('Storage for the app is full. Delete some songs to add more.');
   else toast(`Added ${plural(added,'song')}`+(skipped?` · ${skipped} already in library`:'')+(failed?` · ${failed} couldn't be read`:''));
   askPersist();
@@ -524,6 +530,7 @@ function viewTracks(v){
   if(v.type==='album')return S.tracks.filter(t=>alKey(t)===v.key).sort(byNo);
   if(v.type==='artist')return S.tracks.filter(t=>t.artist===v.key).sort((a,b)=>(a.album||'').localeCompare(b.album||'')||byNo(a,b));
   if(v.type==='playlist'){const p=S.playlists.find(p=>p.id===v.key);return p?p.ids.map(id=>S.byId.get(id)).filter(Boolean):[];}
+  if(v.type==='imported')return S.lastImport.map(id=>S.byId.get(id)).filter(Boolean);
   if(v.type==='liked')return S.tracks.filter(t=>t.liked).sort((a,b)=>(b.likedAt||0)-(a.likedAt||0));
   return [];
 }
@@ -548,6 +555,7 @@ function row(t,lk,i,ctx=''){
 function rows(list,ctxFn,from){const k=reg(list.map(t=>t.id));LISTS[k].from=from;return `<div class="list">${list.map((t,i)=>row(t,k,i,ctxFn?ctxFn(t,i):'')).join('')}</div>`;}
 function mosaic(list){const seen=[],out=[];for(const t of list){const k=t.artKey||t.id;if(!seen.includes(k)){seen.push(k);out.push(t);}if(out.length===4)break;}
   if(out.length<4)return art(out[0],'lg');return `<div class="mosaic">${out.map(t=>art(t,'lg')).join('')}</div>`;}
+function mosaicSm(list){return art(list.find(t=>t.artKey)||list[0],'md');}
 function plArt(p,cls){const list=p.ids.map(id=>S.byId.get(id)).filter(Boolean);if(!list.length)return `<div class="art ${cls} ph" style="--h:${hue(p.name)}">${ic('library',cls==='lg'?56:22)}</div>`;
   if(cls==='lg')return mosaic(list);return art(list.find(t=>t.artKey)||list[0],cls);}
 const likedArt=cls=>`<div class="art ${cls} liked">${ic('heartF',cls==='lg'?72:22)}</div>`;
@@ -568,7 +576,7 @@ function render(){
 function playCtrls(k){
   return `<div class="pc"><button class="pill amber" data-act="playall" data-l="${k}">${ic('play',18)}Play in order</button><button class="pill${S.shuffle?' on':''}" data-act="playall" data-l="${k}" data-sh="1">${ic('shuffle',18)}Shuffle</button><button class="pill${S.repeat!=='off'?' on':''}" data-act="loopToggle" aria-pressed="${S.repeat!=='off'}">${ic(S.repeat==='one'?'repeat1':'repeat',18)}${S.repeat==='one'?'Loop song':'Loop'}${S.repeat!=='off'?' on':' off'}</button></div>`;
 }
-function detailTitle(v){if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
+function detailTitle(v){if(v.type==='imported')return 'Just imported';if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
 function banners(){
   let h='';
   if(!isPWAFile&&!LS.get('hidePreview',false))h+=`<div class="banner"><p><b>Preview version.</b> This runs inside Claude, so the browser may clear imported songs. Install the homescreen version from the download in the chat for proper offline use.</p><button class="ib" data-act="hideBanner" data-k="hidePreview" aria-label="Dismiss">${ic('x',16)}</button></div>`;
@@ -590,7 +598,9 @@ function homeHTML(){
   const recentAl=als.filter(a=>a.last).sort((a,b)=>b.last-a.last).slice(0,10);
   const added=[...S.tracks].sort((a,b)=>b.added-a.added).slice(0,8);
   const top=[...S.tracks].filter(t=>t.plays>1).sort((a,b)=>b.plays-a.plays).slice(0,5);
-  return banners()+`<p class="hello">${greet}</p><div class="quick">${quick.join('')}</div>`+
+  const li=S.lastImport.filter(id=>S.byId.has(id));
+  const imp=li.length?`<button class="impcard" data-act="open" data-type="imported">${mosaicSm(li.map(id=>S.byId.get(id)))}<span class="meta"><b>Just imported</b><small>${plural(li.length,'new song')} · tap to sort them into playlists</small></span>${ic('back',20).replace('M15 5l-7 7 7 7','M9 5l7 7-7 7')}</button>`:'';
+  return banners()+`<p class="hello">${greet}</p>${imp}<div class="quick">${quick.join('')}</div>`+
     (recentAl.length?`<h2>Jump back in</h2><div class="shelf">${recentAl.map(a=>`<button class="cover" data-act="open" data-type="album" data-key="${esc(a.key)}">${art(a.tracks[0],'lg')}<b>${esc(a.name)}</b><small>${esc(a.artist)}</small></button>`).join('')}</div>`:'')+
     (top.length?`<h2>On repeat</h2>${rows(top,null,'On repeat')}`:'')+
     `<h2>Recently added</h2>${rows(added,null,'Recently added')}`;
@@ -625,6 +635,10 @@ function detailHTML(v){
   const list=viewTracks(v);let artH,kind,name,sub,extra='';
   if(v.type==='album'){const [n,a]=v.key.split('|#|');artH=art(list.find(t=>t.artKey)||list[0],'lg');kind='Album';name=n;sub=`${esc(a)} · ${plural(list.length,'song')} · ${total(list)}`;}
   else if(v.type==='artist'){artH=art(list.find(t=>t.artKey)||list[0],'lg','round');kind='Artist';name=v.key;sub=`${plural(list.length,'song')} · ${total(list)}`;}
+  else if(v.type==='imported'){artH=list.length?mosaic(list):likedArt('lg');kind='Import';name='Just imported';
+    const d=new Date(S.lastImportAt||Date.now());const when=d.toDateString()===new Date().toDateString()?`today at ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`:d.toLocaleDateString();
+    sub=`${plural(list.length,'song')} · ${when}`;
+    extra=list.length?`<div class="textbtns" style="justify-content:center"><button class="pill amber" data-act="addAllTo">${ic('library',16)}Add all to playlist</button><button class="pill" data-act="dismissImport">Done, hide this</button></div>`:'';}
   else if(v.type==='liked'){artH=likedArt('lg');kind='Playlist';name='Liked Songs';sub=`${plural(list.length,'song')}${list.length?' · '+total(list):''}`;}
   else{const p=S.playlists.find(p=>p.id===v.key);if(!p)return '<p class="muted">This playlist was deleted.</p>';artH=plArt(p,'lg');kind='Playlist';name=p.name;sub=`${plural(list.length,'song')}${list.length?' · '+total(list):''}`;
     extra=`<div class="textbtns"><button class="pill" data-act="renamepl" data-id="${p.id}">${ic('edit',16)}Rename</button><button class="pill" data-act="delpl" data-id="${p.id}">${ic('trash',16)}Delete</button></div>`;}
@@ -884,6 +898,13 @@ const A={
   delYes:async el=>{closeSheet();await deleteTrack(el.dataset.id);updateNow();savePrefs();if(S.stack.length&&!viewTracks(view()).length&&view().type!=='playlist'&&view().type!=='liked')S.stack.pop();render();toast('Song deleted');},
   rmdemo:async()=>{for(const t of S.tracks.filter(t=>t.demo))await deleteTrack(t.id);updateNow();savePrefs();render();toast('Demo songs removed');},
   update:()=>checkUpdate(),
+  dismissImport:()=>{S.lastImport=[];LS.set('lastImport',null);S.stack=S.stack.filter(v=>v.type!=='imported');render();toast('Your songs stay in All songs');},
+  addAllTo:()=>{const ids=viewTracks({type:'imported'}).map(t=>t.id);if(!ids.length)return;
+    openSheet(`<div class="field"><label>Add ${plural(ids.length,'song')} to…</label></div>`+optH('plus','New playlist','addAllNew')+S.playlists.map(p=>`<button class="opt" data-act="addAllPl" data-pl="${p.id}">${plArt(p,'sm')}<span>${esc(p.name)}<span class="muted small" style="display:block">${plural(p.ids.length,'song')}</span></span></button>`).join(''));},
+  addAllNew:()=>{const ids=viewTracks({type:'imported'}).map(t=>t.id);openNameForm('New playlist','Create','',async n=>{const p=await newPlaylist(n);p.ids=ids.slice();await savePl(p);render();toast(`Created ${n} with ${plural(ids.length,'song')}`);});},
+  addAllPl:async el=>{const ids=viewTracks({type:'imported'}).map(t=>t.id);const p=S.playlists.find(p=>p.id===el.dataset.pl);closeSheet();if(!p)return;
+    const fresh=ids.filter(id=>!p.ids.includes(id));p.ids.push(...fresh);await savePl(p);render();
+    toast(fresh.length?`Added ${plural(fresh.length,'song')} to ${p.name}`+(ids.length-fresh.length?` (${ids.length-fresh.length} already there)`:''):`All of them are already in ${p.name}`);},
   persist:async()=>{let ok=false;try{ok=await navigator.storage.persist();}catch(e){}toast(ok?'Songs are protected from cleanup':isPWAFile?'Open Kazeta from your homescreen, then try again':'Only the homescreen version can do this');fillStorage();},
   hideBanner:el=>{LS.set(el.dataset.k,true);render();},
   loopToggle:()=>{S.repeat=S.repeat==='off'?'all':'off';LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast(S.repeat==='all'?'Loop on: the list starts again at the end':'Loop off: stops at the end');},
@@ -902,6 +923,7 @@ $('#file').addEventListener('change',e=>{const f=e.target.files;if(f&&f.length)i
 (async()=>{
   try{await openDB();}catch(e){useMem=true;}
   try{await loadAll();}catch(e){useMem=true;await loadAll();}
+  const li=LS.get('lastImport',null);if(li&&li.ids){S.lastImport=li.ids.filter(id=>S.byId.has(id));S.lastImportAt=li.at||0;}
   const s=LS.get('session',null);
   if(s&&s.queue){S.queue=s.queue.filter(id=>S.byId.has(id));S.base=(s.base||[]).filter(id=>S.byId.has(id));S.from=s.from||'Your library';
     const cur=s.queue[s.qi];S.qi=S.queue.indexOf(cur);if(S.qi>=0)await loadIdx(S.qi,false,s.time);}
