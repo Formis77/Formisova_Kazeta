@@ -143,6 +143,30 @@ h2{font:700 19px/1.2 var(--display);letter-spacing:-.01em;margin:26px 0 12px}
 .impcard .meta{flex:1;min-width:0;display:flex;flex-direction:column}
 .impcard b{font:700 16px var(--display)}.impcard small{color:var(--mute);font-size:13px}
 .impcard svg{color:var(--tape)}
+.wrcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border-radius:12px;padding:14px 12px 14px 16px;margin-top:14px;background:linear-gradient(120deg,#f5a524,#d9476b 60%,#6b2fb3);color:#fff}
+.wrcard .meta{flex:1;min-width:0;display:flex;flex-direction:column}.wrcard b{font:800 18px var(--display)}.wrcard small{font-size:13px;opacity:.9}
+.wr-hero{border-radius:16px;padding:20px 18px;background:linear-gradient(150deg,#f5a524 0%,#d9476b 55%,#5b2a9e 100%);color:#fff}
+.wr-hero p{margin:8px 0 0;opacity:.92}
+.wr-k{font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;opacity:.85}
+.wr-big{font:800 64px/1 var(--display);letter-spacing:-.04em;margin-top:10px;font-variant-numeric:tabular-nums}
+.wr-unit{font:700 18px var(--display);margin-top:2px}
+.wr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.wr-tile{background:var(--deck);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.wr-tile b{font:800 30px/1.05 var(--display);letter-spacing:-.02em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.wr-tile b small{font-size:16px;color:var(--mute);font-weight:600}
+.wr-tile span{color:var(--mute);font-size:13px}
+.wr-song{display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:center;background:var(--deck);border-radius:12px;padding:12px;margin-top:8px}
+.wr-song .art.lg{width:110px;font-size:40px}
+.wr-st{font:800 21px/1.15 var(--display);margin:4px 0 2px;overflow-wrap:anywhere}
+.wr-song .wr-k{color:var(--tape);opacity:1}
+.wr-list{list-style:none;margin:0;padding:0;counter-reset:n;display:flex;flex-direction:column;gap:4px}
+.wr-list li{display:flex;align-items:center;gap:12px;counter-increment:n;min-height:56px}
+.wr-list li::before{content:counter(n);font:800 20px var(--display);color:var(--tape);width:18px;text-align:center;flex:none}
+.wr-list .meta{flex:1;min-width:0}.wr-list .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wr-list .s{font-size:13px;color:var(--mute)}
+.wr-bars{display:flex;align-items:flex-end;gap:2px;height:60px;margin-top:12px}
+.wr-bars i{flex:1;background:var(--tape);border-radius:2px 2px 0 0;opacity:.85}
+.wr-axis{display:flex;justify-content:space-between;font:500 11px var(--mono);color:var(--mute);margin-top:4px}
+.wide{margin-top:0}
 .textbtns{display:flex;gap:6px;flex-wrap:wrap}
 
 /* search */
@@ -336,15 +360,15 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='9';
+const VERSION='10';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
-const MEM={tracks:new Map(),blobs:new Map(),playlists:new Map(),art:new Map()};
+const MEM={plays:new Map(),tracks:new Map(),blobs:new Map(),playlists:new Map(),art:new Map()};
 let useMem=false,dbp=null;
-function openDB(){if(!dbp)dbp=new Promise((res,rej)=>{let r;try{r=indexedDB.open('kazeta',1);}catch(e){rej(e);return;}r.onupgradeneeded=()=>{const d=r.result;['tracks','playlists'].forEach(n=>d.objectStoreNames.contains(n)||d.createObjectStore(n,{keyPath:'id'}));['blobs','art'].forEach(n=>d.objectStoreNames.contains(n)||d.createObjectStore(n));};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});return dbp;}
+function openDB(){if(!dbp)dbp=new Promise((res,rej)=>{let r;try{r=indexedDB.open('kazeta',2);}catch(e){rej(e);return;}r.onupgradeneeded=()=>{const d=r.result;['tracks','playlists','plays'].forEach(n=>d.objectStoreNames.contains(n)||d.createObjectStore(n,{keyPath:'id'}));['blobs','art'].forEach(n=>d.objectStoreNames.contains(n)||d.createObjectStore(n));};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});return dbp;}
 async function tx(store,mode,fn){const d=await openDB();return new Promise((res,rej)=>{const t=d.transaction(store,mode);let out;const r=fn(t.objectStore(store));if(r)r.onsuccess=()=>{out=r.result};t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error);});}
-const keyed=s=>s==='tracks'||s==='playlists';
+const keyed=s=>s==='tracks'||s==='playlists'||s==='plays';
 const db={
   all:async s=>useMem?[...MEM[s].values()]:tx(s,'readonly',o=>o.getAll()),
   allKeyed:async s=>{if(useMem)return [...MEM[s].entries()];const d=await openDB();return new Promise((res,rej)=>{const out=[];const t=d.transaction(s);const r=t.objectStore(s).openCursor();r.onsuccess=()=>{const c=r.result;if(c){out.push([c.key,c.value]);c.continue();}};t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);});},
@@ -570,13 +594,61 @@ function render(){
   if(v.type==='home'){top.innerHTML=`<h1>Kazeta</h1>${S.tracks.length?imp:''}`;main.innerHTML=homeHTML();}
   else if(v.type==='search'){if(!$('#q')){top.innerHTML='<h1>Search</h1>';main.innerHTML=`<div class="searchbox">${ic('search',20)}<input id="q" type="search" placeholder="Songs, artists or albums" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(S.q)}" aria-label="Search your library"></div><div id="results"></div>`;$('#q').addEventListener('input',e=>{S.q=e.target.value;renderResults();});}renderResults();return;}
   else if(v.type==='library'){top.innerHTML=`<h1>Your Library</h1>${imp}`;main.innerHTML=libraryHTML();fillStorage();}
+  else if(v.type==='wrapped'){top.innerHTML=`${back}<h1 style="font-size:19px">Kazeta Wrapped</h1>`;main.innerHTML='<div id="wrap"></div>';renderWrapped();}
   else{top.innerHTML=`${back}<h1 style="font-size:19px">${esc(detailTitle(v))}</h1>`;main.innerHTML=detailHTML(v);}
   main.classList.toggle('paused',audio.paused);
 }
 function playCtrls(k){
   return `<div class="pc"><button class="pill amber" data-act="playall" data-l="${k}">${ic('play',18)}Play in order</button><button class="pill${S.shuffle?' on':''}" data-act="playall" data-l="${k}" data-sh="1">${ic('shuffle',18)}Shuffle</button><button class="pill${S.repeat!=='off'?' on':''}" data-act="loopToggle" aria-pressed="${S.repeat!=='off'}">${ic(S.repeat==='one'?'repeat1':'repeat',18)}${S.repeat==='one'?'Loop song':'Loop'}${S.repeat!=='off'?' on':' off'}</button></div>`;
 }
-function detailTitle(v){if(v.type==='imported')return 'Just imported';if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
+const RANGES=[['week','Week',7],['month','Month',30],['half','6 months',182],['year','Year',365]];
+async function renderWrapped(){
+  const box=$('#wrap');if(!box)return;saveListen();
+  const key=LS.get('wrapRange','week'),[,label,days]=RANGES.find(r=>r[0]===key)||RANGES[0];
+  let all=[];try{all=await db.all('plays');}catch(e){}
+  const now=Date.now(),since=now-days*864e5,ps=all.filter(p=>p.at>=since&&p.secs>0);
+  const chips=`<div class="chips" role="group" aria-label="Time range">${RANGES.map(([k,l])=>`<button class="chip" data-act="wrange" data-k="${k}" aria-pressed="${k===key}">${l}</button>`).join('')}</div>`;
+  const fmtD=d=>new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'short'});
+  const firstLog=all.length?Math.min(...all.map(p=>p.at)):now;
+  const range=`${fmtD(Math.max(since,firstLog))} – ${fmtD(now)}`;
+  if(!ps.length){box.innerHTML=chips+`<div class="wr-hero"><div class="wr-k">Your last ${label.toLowerCase()}</div><div class="wr-big" style="font-size:34px">Nothing yet</div><p>A song counts once you've listened to it for 30 seconds. Play some music and your stats appear here.</p></div>`;return;}
+  const mins=ps.reduce((a,p)=>a+p.secs,0)/60;
+  const group=(keyFn,nameFn)=>{const m=new Map();for(const p of ps){const k=keyFn(p);if(!k)continue;if(!m.has(k))m.set(k,{k,name:nameFn(p),plays:0,secs:0,p});const g=m.get(k);g.plays++;g.secs+=p.secs;}return [...m.values()];};
+  const songs=group(p=>p.tid||p.title+'|'+p.artist,p=>p.title).sort((a,b)=>b.plays-a.plays||b.secs-a.secs);
+  const artistsL=group(p=>p.artist,p=>p.artist).sort((a,b)=>b.secs-a.secs);
+  const albumsL=group(p=>p.album?p.album+'|'+p.artist:'',p=>p.album).sort((a,b)=>b.secs-a.secs);
+  const dayset=new Set(ps.map(p=>new Date(p.at).toDateString()));
+  const totalDays=Math.min(days,Math.max(1,Math.ceil((now-Math.max(since,firstLog))/864e5)));
+  const hours=new Array(24).fill(0);ps.forEach(p=>hours[new Date(p.at).getHours()]+=p.secs);
+  const parts=[['Early bird','5–11',[5,6,7,8,9,10]],['Afternoon listener','11–17',[11,12,13,14,15,16]],['Evening listener','17–22',[17,18,19,20,21]],['Night owl','22–5',[22,23,0,1,2,3,4]]].map(([n,r,hs])=>({n,r,v:hs.reduce((a,h)=>a+hours[h],0)})).sort((a,b)=>b.v-a.v);
+  const wd=new Array(7).fill(0);ps.forEach(p=>wd[new Date(p.at).getDay()]+=p.secs);const topDay=wd.indexOf(Math.max(...wd));
+  const dayName=new Date(2026,0,4+topDay).toLocaleDateString(undefined,{weekday:'long'});
+  const tObj=g=>S.byId.get(g.p.tid);
+  const top=songs[0],tt=tObj(top);
+  const h=Math.floor(mins/60),mm=Math.round(mins%60);
+  const maxH=Math.max(...hours)||1;
+  box.innerHTML=chips+`
+  <section class="wr-hero"><div class="wr-k">Your last ${label.toLowerCase()} · ${range}</div>
+    <div class="wr-big">${Math.round(mins).toLocaleString()}</div><div class="wr-unit">minutes of music</div>
+    <p>${h?`That's ${h} hr ${mm} min`:`That's ${mm} min`} across ${plural(ps.length,'play')}.</p></section>
+  <div class="wr-grid">
+    <div class="wr-tile"><b>${ps.length}</b><span>plays</span></div>
+    <div class="wr-tile"><b>${songs.length}</b><span>different songs</span></div>
+    <div class="wr-tile"><b>${dayset.size}<small>/${totalDays}</small></b><span>days you listened</span></div>
+    <div class="wr-tile"><b>${artistsL.length}</b><span>artists</span></div>
+  </div>
+  <section class="wr-song">${tt?art(tt,'lg'):`<div class="art lg ph" style="--h:${hue(top.p.album||top.name)}">${esc((top.name||'?')[0])}</div>`}
+    <div><div class="wr-k">Song of the ${label==='6 months'?'half year':label.toLowerCase()}</div><div class="wr-st">${esc(top.name)}</div><div class="muted">${esc(top.p.artist)} · played ${top.plays}×</div></div></section>
+  <h2>Top songs</h2><ol class="wr-list">${songs.slice(0,5).map(g=>{const t=tObj(g);return `<li>${t?art(t):`<div class="art sm ph" style="--h:${hue(g.name)}"></div>`}<div class="meta"><div class="t">${esc(g.name)}</div><div class="s">${esc(g.p.artist)}</div></div><span class="dur">${g.plays}×</span></li>`;}).join('')}</ol>
+  <h2>Top artists</h2><ol class="wr-list">${artistsL.slice(0,5).map(g=>{const t=S.tracks.find(x=>x.artist===g.name&&x.artKey)||S.tracks.find(x=>x.artist===g.name);return `<li>${t?art(t,'sm','round'):`<div class="art sm ph round" style="--h:${hue(g.name)}"></div>`}<div class="meta"><div class="t">${esc(g.name)}</div><div class="s">${plural(g.plays,'play')}</div></div><span class="dur">${Math.round(g.secs/60)} min</span></li>`;}).join('')}</ol>
+  ${albumsL.length?`<h2>Top album</h2><div class="wr-tile wide"><b style="font-size:20px">${esc(albumsL[0].name)}</b><span>${esc(albumsL[0].p.artist)} · ${Math.round(albumsL[0].secs/60)} min</span></div>`:''}
+  <h2>When you listen</h2>
+  <div class="wr-tile wide"><b style="font-size:22px">${parts[0].n}</b><span>Most of your music plays ${parts[0].r} h. Busiest day: ${dayName}.</span>
+    <div class="wr-bars" aria-hidden="true">${hours.map((v,i)=>`<i style="height:${Math.max(3,v/maxH*100)}%" title="${i}:00"></i>`).join('')}</div>
+    <div class="wr-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>
+  <p class="muted small" style="margin-top:18px">Stats count every song you listen to for at least 30 seconds${firstLog>since?`, starting ${fmtD(firstLog)}`:''}.</p>`;
+}
+function detailTitle(v){if(v.type==='wrapped')return 'Kazeta Wrapped';if(v.type==='imported')return 'Just imported';if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
 function banners(){
   let h='';
   if(!isPWAFile&&!LS.get('hidePreview',false))h+=`<div class="banner"><p><b>Preview version.</b> This runs inside Claude, so the browser may clear imported songs. Install the homescreen version from the download in the chat for proper offline use.</p><button class="ib" data-act="hideBanner" data-k="hidePreview" aria-label="Dismiss">${ic('x',16)}</button></div>`;
@@ -600,7 +672,8 @@ function homeHTML(){
   const top=[...S.tracks].filter(t=>t.plays>1).sort((a,b)=>b.plays-a.plays).slice(0,5);
   const li=S.lastImport.filter(id=>S.byId.has(id));
   const imp=li.length?`<button class="impcard" data-act="open" data-type="imported">${mosaicSm(li.map(id=>S.byId.get(id)))}<span class="meta"><b>Just imported</b><small>${plural(li.length,'new song')} · tap to sort them into playlists</small></span>${ic('back',20).replace('M15 5l-7 7 7 7','M9 5l7 7-7 7')}</button>`:'';
-  return banners()+`<p class="hello">${greet}</p>${imp}<div class="quick">${quick.join('')}</div>`+
+  const wr=`<button class="wrcard" data-act="open" data-type="wrapped"><span class="meta"><b>Kazeta Wrapped</b><small>Your listening stats: week, month, 6 months, year</small></span>${ic('back',20).replace('M15 5l-7 7 7 7','M9 5l7 7-7 7')}</button>`;
+  return banners()+`<p class="hello">${greet}</p>${imp}<div class="quick">${quick.join('')}</div>${wr}`+
     (recentAl.length?`<h2>Jump back in</h2><div class="shelf">${recentAl.map(a=>`<button class="cover" data-act="open" data-type="album" data-key="${esc(a.key)}">${art(a.tracks[0],'lg')}<b>${esc(a.name)}</b><small>${esc(a.artist)}</small></button>`).join('')}</div>`:'')+
     (top.length?`<h2>On repeat</h2>${rows(top,null,'On repeat')}`:'')+
     `<h2>Recently added</h2>${rows(added,null,'Recently added')}`;
@@ -618,6 +691,7 @@ function libraryHTML(){
     <div class="row" data-act="open" data-type="liked" role="button" tabindex="0">${likedArt('md')}<div class="meta"><div class="t">Liked Songs</div><div class="s">Playlist · ${plural(S.tracks.filter(t=>t.liked).length,'song')}</div></div></div>
     ${S.playlists.map(p=>`<div class="row" data-act="open" data-type="playlist" data-key="${p.id}" role="button" tabindex="0">${plArt(p,'md')}<div class="meta"><div class="t">${esc(p.name)}</div><div class="s">Playlist · ${plural(p.ids.length,'song')}</div></div></div>`).join('')}</div>`;}
   const demos=S.tracks.filter(t=>t.demo).length;
+  h+=`<button class="wrcard" style="margin-top:24px" data-act="open" data-type="wrapped"><span class="meta"><b>Kazeta Wrapped</b><small>Your listening stats</small></span>${ic('back',20).replace('M15 5l-7 7 7 7','M9 5l7 7-7 7')}</button>`;
   h+=`<div class="card" id="storage"><h4>Storage on this phone <span class="muted small" style="font-weight:500">· Kazeta v${VERSION}</span></h4><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns"><span id="stB" style="display:contents"></span><button class="pill" data-act="update">${ic('import',16)}Check for updates</button></div>${demos?`<div class="textbtns"><button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button></div>`:''}</div>`;
   return h;
 }
@@ -685,7 +759,7 @@ async function loadIdx(i,auto,seekTo){
   try{const buf=await blob.arrayBuffer();blob=new Blob([buf],{type:t.type||blob.type||EXT_MIME[t.ext]||'audio/mpeg'});}catch(e){}
   if(tok!==playTok)return;
   if(curURL)URL.revokeObjectURL(curURL);curURL=URL.createObjectURL(blob);
-  audio.src=curURL;audio.muted=false;
+  audio.src=curURL;audio.muted=false;startListen();
   if(seekTo){audio.addEventListener('loadedmetadata',()=>{try{audio.currentTime=seekTo;}catch(e){}},{once:true});audio.load();}
   if(auto){try{await audio.play();}catch(e){}t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
   updateNow();markRows();savePrefs();setMS(t);prepareNext();
@@ -717,7 +791,7 @@ async function prepareNext(){
 function playPrepared(n){
   const t=S.byId.get(S.queue[n]);++playTok;S.qi=n;
   if(curURL)URL.revokeObjectURL(curURL);curURL=pre.url;pre=null;
-  audio.muted=false;audio.src=curURL;const p=audio.play();if(p)p.catch(()=>{});
+  audio.muted=false;audio.src=curURL;const p=audio.play();if(p)p.catch(()=>{});startListen();
   if(t){t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
   updateNow();markRows();savePrefs();setMS(t);prepareNext();
 }
@@ -730,7 +804,7 @@ function setShuffle(on){
   updateNow();savePrefs();prepareNext();render();toast(on?'Shuffle on':'Shuffle off');
 }
 function cycleRepeat(){S.repeat={off:'all',all:'one',one:'off'}[S.repeat];LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast({off:'Repeat off',all:'Repeating the whole list',one:'Repeating this song'}[S.repeat]);}
-audio.addEventListener('ended',()=>{if(S.repeat==='one'){audio.currentTime=0;audio.play().catch(()=>{});}else next(false);});
+audio.addEventListener('ended',()=>{if(S.repeat==='one'){audio.currentTime=0;startListen();audio.play().catch(()=>{});}else next(false);});
 audio.addEventListener('play',()=>{updatePlayBtns();markRows();if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';});
 audio.addEventListener('pause',()=>{updatePlayBtns();markRows();savePrefs();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';});
 audio.addEventListener('loadedmetadata',()=>{const t=S.byId.get(curId());if(t&&isFinite(audio.duration)&&Math.abs((t.duration||0)-audio.duration)>1){t.duration=audio.duration;db.put('tracks',t).catch(()=>{});}updateTime();});
@@ -738,15 +812,26 @@ audio.addEventListener('error',()=>{if(!audio.src||audio.src.startsWith('data:')
   let msg=code===4?`This phone can't play ${name}${t&&t.ext?' ('+t.ext.toUpperCase()+' file)':''}.`:`Couldn't load ${name} (error ${code}).`;
   if(!isPWAFile)msg+=' The preview inside Claude may block audio; the homescreen version doesn\'t.';
   toast(msg);if(S.qi+1<S.queue.length)setTimeout(()=>next(false),1500);});
+/* ---------- listening log (for Kazeta Wrapped) ---------- */
+let L=null,lastT=0;
+const needSecs=id=>{const d=(S.byId.get(id)||{}).duration||60;return Math.min(30,d*0.5);};
+function saveListen(){if(!L||L.secs<needSecs(L.id)||L.secs-L.saved<1)return;L.saved=L.secs;const t=S.byId.get(L.id)||{};
+  db.put('plays',{id:L.pid,tid:L.id,at:L.at,secs:Math.round(L.secs),title:t.title||'',artist:t.artist||'',album:t.album||''}).catch(()=>{});}
+function startListen(){saveListen();const id=curId();L=id?{id,pid:uid(),at:Date.now(),secs:0,saved:0}:null;lastT=audio.currentTime||0;}
+function tickListen(){const now=audio.currentTime||0;if(!audio.paused&&L&&L.id===curId()){const d=now-lastT;if(d>0&&d<2.5)L.secs+=d;
+  if(L.secs>=needSecs(L.id)&&(!L.saved||L.secs-L.saved>=15))saveListen();}lastT=now;}
+audio.addEventListener('seeked',()=>{lastT=audio.currentTime||0;});
+audio.addEventListener('pause',()=>saveListen());
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveListen();});
 let lastSave=0,dragging=false;
 audio.addEventListener('timeupdate',()=>{
   /* Switch songs just BEFORE the current one ends. While audio is still playing, iOS keeps the
      locked-screen app awake and allows the switch; once it has ended, iOS may already have suspended us. */
   if(!audio.paused&&isFinite(audio.duration)&&audio.duration>3&&audio.duration-audio.currentTime<0.7){
-    if(S.repeat==='one'){audio.currentTime=0;}
+    if(S.repeat==='one'){audio.currentTime=0;startListen();}
     else{const n=nextIndex(false);if(n>=0&&pre&&pre.id===S.queue[n]){playPrepared(n);return;}}
   }
-  updateTime();const n=Date.now();if(n-lastSave>5000){lastSave=n;savePrefs();}});
+  tickListen();updateTime();const n=Date.now();if(n-lastSave>5000){lastSave=n;savePrefs();}});
 function updateTime(){
   const d=audio.duration||(S.byId.get(curId())||{}).duration||0,c=audio.currentTime||0,p=d?c/d*100:0;
   $('#miniProg').style.width=p+'%';
@@ -898,6 +983,7 @@ const A={
   delYes:async el=>{closeSheet();await deleteTrack(el.dataset.id);updateNow();savePrefs();if(S.stack.length&&!viewTracks(view()).length&&view().type!=='playlist'&&view().type!=='liked')S.stack.pop();render();toast('Song deleted');},
   rmdemo:async()=>{for(const t of S.tracks.filter(t=>t.demo))await deleteTrack(t.id);updateNow();savePrefs();render();toast('Demo songs removed');},
   update:()=>checkUpdate(),
+  wrange:el=>{LS.set('wrapRange',el.dataset.k);renderWrapped();},
   dismissImport:()=>{S.lastImport=[];LS.set('lastImport',null);S.stack=S.stack.filter(v=>v.type!=='imported');render();toast('Your songs stay in All songs');},
   addAllTo:()=>{const ids=viewTracks({type:'imported'}).map(t=>t.id);if(!ids.length)return;
     openSheet(`<div class="field"><label>Add ${plural(ids.length,'song')} to…</label></div>`+optH('plus','New playlist','addAllNew')+S.playlists.map(p=>`<button class="opt" data-act="addAllPl" data-pl="${p.id}">${plArt(p,'sm')}<span>${esc(p.name)}<span class="muted small" style="display:block">${plural(p.ids.length,'song')}</span></span></button>`).join(''));},
