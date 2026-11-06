@@ -136,6 +136,9 @@ h2{font:700 19px/1.2 var(--display);letter-spacing:-.01em;margin:26px 0 12px}
 .qrow.drag{transition:none;position:relative;z-index:5;background:var(--deck-2);box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .qh{width:40px;height:44px;display:grid;place-items:center;color:var(--mute);touch-action:none;flex:none;cursor:grab}
 .qx{width:34px;height:34px}
+.ck{display:inline-block;vertical-align:-2px;margin-right:4px}.ck svg{display:inline}
+.ckempty{width:24px;height:24px;border-radius:50%;border:2px solid var(--line);flex:none}
+.opt .ckc{color:inherit}
 .textbtns{display:flex;gap:6px;flex-wrap:wrap}
 
 /* search */
@@ -329,7 +332,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='7';
+const VERSION='8';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -535,9 +538,12 @@ function art(t,cls='sm',extra=''){
   return `<div class="art ${cls} ph ${extra}" style="--h:${hue(t.album||t.title)}">${esc(label.toUpperCase())}</div>`;
 }
 const curId=()=>S.queue[S.qi];
+let PLSET=new Set();const refreshPlSet=()=>{PLSET=new Set(S.playlists.flatMap(p=>p.ids));};
+const plOf=id=>S.playlists.filter(p=>p.ids.includes(id));
+const CHECK=s=>`<svg class="ckc" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="var(--tape)"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="var(--tape-ink)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 function row(t,lk,i,ctx=''){
   const cur=curId()===t.id;
-  return `<div class="row${cur?' cur':''}" data-act="play" data-l="${lk}" data-i="${i}" data-tid="${t.id}">${art(t)}<div class="meta"><div class="t">${cur?'<span class="eq"><i></i><i></i><i></i></span>':''}${esc(t.title)}</div><div class="s">${t.liked?'<span class="lk">♥</span> ':''}${esc(t.artist)}${t.album?' · '+esc(t.album):''}</div></div><span class="dur">${fmt(t.duration)}</span><button class="ib" data-act="menu" data-id="${t.id}" data-ctx="${ctx}" aria-label="More options for ${esc(t.title)}">${ic('more',20)}</button></div>`;
+  return `<div class="row${cur?' cur':''}" data-act="play" data-l="${lk}" data-i="${i}" data-tid="${t.id}">${art(t)}<div class="meta"><div class="t">${cur?'<span class="eq"><i></i><i></i><i></i></span>':''}${esc(t.title)}</div><div class="s">${PLSET.has(t.id)?`<span class="ck" title="In a playlist">${CHECK(13)}</span>`:''}${t.liked?'<span class="lk">♥</span> ':''}${esc(t.artist)}${t.album?' · '+esc(t.album):''}</div></div><span class="dur">${fmt(t.duration)}</span><button class="ib" data-act="menu" data-id="${t.id}" data-ctx="${ctx}" aria-label="More options for ${esc(t.title)}">${ic('more',20)}</button></div>`;
 }
 function rows(list,ctxFn,from){const k=reg(list.map(t=>t.id));LISTS[k].from=from;return `<div class="list">${list.map((t,i)=>row(t,k,i,ctxFn?ctxFn(t,i):'')).join('')}</div>`;}
 function mosaic(list){const seen=[],out=[];for(const t of list){const k=t.artKey||t.id;if(!seen.includes(k)){seen.push(k);out.push(t);}if(out.length===4)break;}
@@ -548,7 +554,7 @@ const likedArt=cls=>`<div class="art ${cls} liked">${ic('heartF',cls==='lg'?72:2
 
 function view(){return S.stack.length?S.stack[S.stack.length-1]:{type:S.tab};}
 function render(){
-  LISTS={};lid=0;const v=view();
+  LISTS={};lid=0;refreshPlSet();const v=view();
   ['home','search','library'].forEach(n=>{const b=$('#tab-'+n);const on=S.tab===n;b.setAttribute('aria-current',on?'page':'false');b.innerHTML=ic(n,24)+({home:'Home',search:'Search',library:'Your Library'})[n];});
   const top=$('#top'),main=$('#main');
   const back=S.stack.length?`<button class="back" data-act="back" aria-label="Back">${ic('back',20)}</button>`:'';
@@ -630,7 +636,7 @@ function detailHTML(v){
   return h;
 }
 function renderResults(){
-  LISTS={};lid=0;const q=S.q.trim().toLowerCase(),box=$('#results');if(!box)return;
+  LISTS={};lid=0;refreshPlSet();const q=S.q.trim().toLowerCase(),box=$('#results');if(!box)return;
   if(!q){const ar=artists().slice(0,12);box.innerHTML=S.tracks.length?`<h2>Your artists</h2><div class="list">${ar.map(a=>`<div class="row" data-act="open" data-type="artist" data-key="${esc(a.name)}" role="button" tabindex="0">${art(a.tracks.find(t=>t.artKey)||a.tracks[0],'md','round')}<div class="meta"><div class="t">${esc(a.name)}</div><div class="s">${plural(a.tracks.length,'song')}</div></div></div>`).join('')}</div>`:`<p class="muted">Import songs first, then search them here.</p>`;return;}
   const hit=s=>(s||'').toLowerCase().includes(q);
   const songs=S.tracks.filter(t=>hit(t.title)||hit(t.artist)||hit(t.album)).sort((a,b)=>(hit(b.title)-hit(a.title))||byTitle(a,b)).slice(0,40);
@@ -782,6 +788,10 @@ function closeSheet(){sheetMode=null;$('#sheet').classList.remove('open');$('#sc
 let toastT;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),Math.max(2600,m.length*55));}
 function busy(on,title,n,of){const b=$('#busy');b.hidden=!on;if(!on)return;$('#busyT').textContent=title;$('#busyS').textContent=of?`${n} of ${of}`:'';$('#busyM').style.width=(of?n/of*100:0)+'%';}
 const optH=(icn,label,act,data='',cls='')=>`<button class="opt ${cls}" data-act="${act}" ${data}>${ic(icn,22)}<span>${label}</span></button>`;
+function openAddTo(id){const t=S.byId.get(id);if(!t)return;
+  openSheet(sheetHead(t)+optH('plus','New playlist','newplWith',`data-id="${id}"`)+S.playlists.map(p=>{const has=p.ids.includes(id);
+    return `<button class="opt" data-act="topl" data-id="${id}" data-pl="${p.id}" aria-pressed="${has}" aria-label="${has?'Remove from':'Add to'} ${esc(p.name)}">${plArt(p,'sm')}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}<span class="muted small" style="display:block">${plural(p.ids.length,'song')}</span></span>${has?CHECK(24):'<span class="ckempty"></span>'}</button>`;}).join('')+
+    `<div class="sh-acts"><button class="pill amber" data-act="closeSheet">Done</button></div>`,'addto');}
 function afterQueueChange(){savePrefs();updateNow();prepareNext();if(sheetMode==='queue')renderQueue();}
 function renderQueue(){
   const w=$('#qwrap');if(!w)return;const t=S.byId.get(curId());if(!t){closeSheet();return;}
@@ -814,7 +824,7 @@ function sheetHead(t){return `<div class="sh-head">${art(t)}<div class="meta"><d
 function openMenu(id,ctx){
   const t=S.byId.get(id);if(!t)return;const d=`data-id="${id}" data-ctx="${ctx||''}"`;
   let h=sheetHead(t)+optH(t.liked?'heartF':'heart',t.liked?'Remove from Liked Songs':'Save to Liked Songs','likeId',d)+
-    optH('library','Add to playlist','addto',d)+optH('next2','Play next','playnext',d)+optH('addq','Add to queue','addq',d);
+    (()=>{const n=plOf(id).length;return n?`<button class="opt" data-act="addto" ${d}>${CHECK(22)}<span>In ${plural(n,'playlist')} · Change</span></button>`:optH('library','Add to playlist','addto',d);})()+optH('next2','Play next','playnext',d)+optH('addq','Add to queue','addq',d);
   if(ctx&&ctx.startsWith('pl:'))h+=optH('minus','Remove from this playlist','rmpl',d);
   h+=optH('album','Go to album','goalbum',d)+optH('user','Go to artist','goartist',d)+optH('trash','Delete from Kazeta','del',d,'danger');
   openSheet(h);
@@ -858,9 +868,10 @@ const A={
   likeId:el=>{closeSheet();toggleLike(el.dataset.id);},
   playnext:el=>{const id=el.dataset.id;closeSheet();if(S.qi<0){playList([id],0);return;}S.queue.splice(S.qi+1,0,id);savePrefs();updateNow();prepareNext();toast('Plays next');},
   addq:el=>{const id=el.dataset.id;closeSheet();if(S.qi<0){playList([id],0);return;}S.queue.push(id);savePrefs();updateNow();prepareNext();toast('Added to queue');},
-  addto:el=>{const id=el.dataset.id;const t=S.byId.get(id);
-    openSheet(sheetHead(t)+optH('plus','New playlist','newplWith',`data-id="${id}"`)+S.playlists.map(p=>`<button class="opt" data-act="topl" data-id="${id}" data-pl="${p.id}">${plArt(p,'sm')}<span>${esc(p.name)}<span class="muted small" style="display:block">${plural(p.ids.length,'song')}</span></span></button>`).join(''));},
-  topl:async el=>{const p=S.playlists.find(p=>p.id===el.dataset.pl);closeSheet();if(!p)return;if(p.ids.includes(el.dataset.id)){toast(`Already in ${p.name}`);return;}p.ids.push(el.dataset.id);await savePl(p);toast(`Added to ${p.name}`);render();},
+  addto:el=>openAddTo(el.dataset.id),
+  topl:async el=>{const id=el.dataset.id,p=S.playlists.find(p=>p.id===el.dataset.pl);if(!p)return;
+    if(p.ids.includes(id)){p.ids=p.ids.filter(x=>x!==id);toast(`Removed from ${p.name}`);}else{p.ids.push(id);toast(`Added to ${p.name}`);}
+    await savePl(p);openAddTo(id);render();},
   newplWith:el=>{const id=el.dataset.id;openNameForm('New playlist','Create','',async n=>{await newPlaylist(n,id);toast(`Added to ${n}`);render();});},
   newpl:()=>openNameForm('New playlist','Create','',async n=>{const p=await newPlaylist(n);S.stack.push({type:'playlist',key:p.id});render();}),
   renamepl:el=>{const p=S.playlists.find(p=>p.id===el.dataset.id);if(!p)return;openNameForm('Rename playlist','Save',p.name,async n=>{p.name=n;await savePl(p);render();});},

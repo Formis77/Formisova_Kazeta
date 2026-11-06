@@ -1,6 +1,6 @@
 // Kazeta service worker: keeps the app itself available offline.
 // Your songs live in the app's own storage (IndexedDB), not here.
-const CACHE = 'kazeta-v7';
+const CACHE = 'kazeta-v8';
 const CORE = ['./', './index.html', './manifest.webmanifest', './apple-touch-icon.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
