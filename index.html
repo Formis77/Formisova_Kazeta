@@ -427,7 +427,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='22';
+const VERSION='23';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -1059,8 +1059,6 @@ function exitSoft(){if(!soft)return;soft=null;audio.loop=false;clearTimeout(kaTi
 function enterSoft(){
   soft={pos:audio.currentTime||0};pausedAt=Date.now();pausedPos=soft.pos;saveListen();
   audio.loop=true;audio.src=silentURL;const p=audio.play();if(p)p.catch(()=>{});
-  /* speed 0: the player keeps running (sound stays on) but iOS shows it as paused */
-  if(LS.get('pauseIcon',true))try{audio.playbackRate=0;}catch(e){}
   clearTimeout(kaTimer);kaTimer=setTimeout(()=>{if(soft)audio.pause();},30*60*1000);
   updatePlayBtns();markRows();updateTime();savePrefs();msState();syncPlayBig();
 }
