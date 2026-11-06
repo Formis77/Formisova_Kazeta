@@ -427,7 +427,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='19';
+const VERSION='20';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -1041,10 +1041,21 @@ async function loadIdx(i,auto,seekTo){
    play() then "succeeds" but stays silent or errors. So after every resume we check that time is
    actually moving, and if not, reload the same song from storage at the same position. */
 let wantPlay=false,pausedAt=0,pausedPos=0,resumeWD=0,lastRecover=0;
-function userPause(){wantPlay=false;audio.pause();}
+/* Keep-alive: iOS turns off a web app's sound output shortly after its music pauses in the background.
+   Resuming from headphones / lock screen then plays silently until the app is opened.
+   While paused, a second player loops pure silence so the output stays on (max 30 min, then stops). */
+const ka=new Audio();ka.loop=true;ka.preload='auto';let kaTimer=0;
+(()=>{const sr=8000,n=sr,B=new ArrayBuffer(44+n*2),v=new DataView(B),w=(p,t)=>{for(let i=0;i<t.length;i++)v.setUint8(p+i,t.charCodeAt(i));};
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+  ka.src=URL.createObjectURL(new Blob([B],{type:'audio/wav'}));})();
+function keepAlive(on){clearTimeout(kaTimer);
+  if(on&&LS.get('keepAlive',true)&&curId()){try{ka.muted=false;const p=ka.play();if(p)p.catch(()=>{});}catch(e){}kaTimer=setTimeout(()=>keepAlive(false),30*60*1000);}
+  else{try{ka.pause();}catch(e){}}
+  if('mediaSession' in navigator)try{navigator.mediaSession.playbackState=audio.paused?'paused':'playing';}catch(e){}}
+function userPause(){wantPlay=false;keepAlive(true);audio.pause();}
 function resume(){
   if(!curId()){toggle();return;}
-  wantPlay=true;audio.muted=false;audio.volume=1;
+  wantPlay=true;audio.muted=false;audio.volume=1;keepAlive(false);
   const tok=playTok,t0=audio.currentTime,long=Date.now()-pausedAt>15000;
   const p=audio.play();if(p)p.catch(()=>{if(tok===playTok&&wantPlay)reloadCurrent(true);});
   clearTimeout(resumeWD);
@@ -1061,13 +1072,14 @@ async function reloadCurrent(play){
   audio.load();
   if(play){wantPlay=true;const p=audio.play();if(p)p.catch(()=>{});}
 }
-audio.addEventListener('pause',()=>{pausedAt=Date.now();pausedPos=audio.currentTime||pausedPos;});
+audio.addEventListener('pause',()=>{pausedAt=Date.now();pausedPos=audio.currentTime||pausedPos;if(wantPlay&&!audio.ended&&ka.paused)keepAlive(true);});
+audio.addEventListener('playing',()=>{if(!ka.paused)keepAlive(false);});
 function toggle(){if(!audio.src||S.qi<0){if(S.tracks.length){const ids=[...S.tracks].sort(byTitle).map(t=>t.id);playList(ids,0);}return;}if(audio.paused)resume();else userPause();}
 function nextIndex(user){if(S.qi+1<S.queue.length)return S.qi+1;if((S.repeat==='all'||user)&&S.queue.length)return 0;return -1;}
 function next(user=true){
   if(S.qi<0)return;
   const n=nextIndex(user);
-  if(n<0){audio.pause();audio.currentTime=0;updateNow();return;}
+  if(n<0){wantPlay=false;audio.pause();audio.currentTime=0;keepAlive(false);updateNow();return;}
   if(pre&&pre.id===S.queue[n])return playPrepared(n);
   loadIdx(n,true);
 }
@@ -1102,7 +1114,7 @@ function setShuffle(on){
   updateNow();savePrefs();prepareNext();render();toast(on?'Shuffle on':'Shuffle off');
 }
 function cycleRepeat(){S.repeat={off:'all',all:'one',one:'off'}[S.repeat];LS.set('repeat',S.repeat);updateNow();prepareNext();render();toast({off:'Repeat off',all:'Repeating the whole list',one:'Repeating this song'}[S.repeat]);}
-audio.addEventListener('ended',()=>{if(S.repeat==='one'){audio.currentTime=0;startListen();audio.play().catch(()=>{});}else next(false);});
+audio.addEventListener('ended',()=>{if(!audio.src||audio.src.startsWith('data:'))return;if(S.repeat==='one'){audio.currentTime=0;startListen();audio.play().catch(()=>{});}else next(false);});
 audio.addEventListener('play',()=>{updatePlayBtns();markRows();syncPlayBig();if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';});
 audio.addEventListener('pause',()=>{updatePlayBtns();markRows();savePrefs();syncPlayBig();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';});
 audio.addEventListener('loadedmetadata',()=>{const t=S.byId.get(curId());if(t&&isFinite(audio.duration)&&Math.abs((t.duration||0)-audio.duration)>1){t.duration=audio.duration;db.put('tracks',t).catch(()=>{});}updateTime();});
@@ -1165,7 +1177,7 @@ function setMS(t){
    song loads, so they are (re)applied on every song change. */
 function setMSHandlers(){if(!('mediaSession' in navigator))return;const ms=navigator.mediaSession,H=(a,f)=>{try{ms.setActionHandler(a,f);}catch(e){}};
   H('seekbackward',null);H('seekforward',null);
-  H('play',()=>resume());H('pause',()=>userPause());H('stop',()=>userPause());
+  H('play',()=>resume());H('pause',()=>{if(audio.paused&&curId())resume();else userPause();});H('stop',()=>{userPause();keepAlive(false);});
   H('previoustrack',()=>{if(audio.currentTime>3)audio.currentTime=0;prev();});H('nexttrack',()=>next());
   H('seekto',d=>{if(d.seekTime!=null){audio.currentTime=d.seekTime;tickListen();}});}
 setMSHandlers();
