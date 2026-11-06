@@ -427,7 +427,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='17';
+const VERSION='18';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -690,10 +690,10 @@ async function addDemos(){
 }
 
 /* ---------- derived collections ---------- */
-const alKey=t=>t.album?t.album+'|#|'+(t.albumArtist||t.artist):'single|#|'+t.id;
+const alKey=t=>t.album?t.album+'|#|'+(t.albumArtist?akey(t.albumArtist):artistsOf(t)[0].k):'single|#|'+t.id;
 const byTitle=(a,b)=>a.title.localeCompare(b.title,undefined,{sensitivity:'base'});
 const byNo=(a,b)=>(a.track||999)-(b.track||999)||byTitle(a,b);
-function albums(){const m=new Map();for(const t of S.tracks){const k=alKey(t);if(!m.has(k))m.set(k,{key:k,single:!t.album,name:t.album||t.title,artist:t.albumArtist||t.artist,tracks:[],last:0,added:0});const a=m.get(k);a.tracks.push(t);a.last=Math.max(a.last,t.lastPlayed||0);a.added=Math.max(a.added,t.added||0);}return [...m.values()];}
+function albums(){const m=new Map();for(const t of S.tracks){const k=alKey(t);if(!m.has(k))m.set(k,{key:k,single:!t.album,name:t.album||t.title,artist:t.albumArtist||artistsOf(t)[0].n,tracks:[],last:0,added:0});const a=m.get(k);a.tracks.push(t);a.last=Math.max(a.last,t.lastPlayed||0);a.added=Math.max(a.added,t.added||0);}return [...m.values()];}
 /* Artist credits: "A feat. B", "A, B & C", "A x B" and "Song (feat. B)" all count for every artist named.
    Spelling/case differences ("David guetta") merge into one artist. Known group names stay whole. */
 const akey=n=>String(n||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/^the\s+/,'').replace(/[^a-z0-9$!+&]+/g,' ').trim();
@@ -789,6 +789,135 @@ function playCtrls(k){
   </div><div class="pc-cap">${cap}</div>`;
 }
 function syncPlayBig(){document.querySelectorAll('.playbig[data-pb]').forEach(b=>{const from=b.dataset.pb;if(!from||S.from!==from)return;render();});}
+const RANGES=[['week','Week',7],['month','Month',30],['half','6 months',182],['year','Year',365]];
+async function renderWrapped(){
+  const box=$('#wrap');if(!box)return;saveListen();
+  const key=LS.get('wrapRange','week'),[,label,days]=RANGES.find(r=>r[0]===key)||RANGES[0];
+  let all=[];try{all=await db.all('plays');}catch(e){}
+  const now=Date.now(),since=now-days*864e5,ps=all.filter(p=>p.at>=since&&p.secs>0);
+  const chips=`<div class="chips" role="group" aria-label="Time range">${RANGES.map(([k,l])=>`<button class="chip" data-act="wrange" data-k="${k}" aria-pressed="${k===key}">${l}</button>`).join('')}</div>`;
+  const fmtD=d=>new Date(d).toLocaleDateString(undefined,{day:'numeric',month:'short'});
+  const firstLog=all.length?Math.min(...all.map(p=>p.at)):now;
+  const range=`${fmtD(Math.max(since,firstLog))} – ${fmtD(now)}`;
+  if(!ps.length){box.innerHTML=chips+`<div class="wr-hero"><div class="wr-k">Your last ${label.toLowerCase()}</div><div class="wr-big" style="font-size:34px">Nothing yet</div><p>A song counts once you've listened to it for 30 seconds. Play some music and your stats appear here.</p></div>`;return;}
+  const mins=ps.reduce((a,p)=>a+p.secs,0)/60;
+  const group=(keyFn,nameFn)=>{const m=new Map();for(const p of ps){const k=keyFn(p);if(!k)continue;if(!m.has(k))m.set(k,{k,name:nameFn(p),plays:0,secs:0,p});const g=m.get(k);g.plays++;g.secs+=p.secs;}return [...m.values()];};
+  const songs=group(p=>p.tid||p.title+'|'+p.artist,p=>p.title).sort((a,b)=>b.plays-a.plays||b.secs-a.secs);
+  const artistsL=(()=>{const m=new Map();for(const p of ps)for(const a of pArtists(p)){if(!m.has(a.k))m.set(a.k,{k:a.k,name:a.n,plays:0,secs:0,p});const g=m.get(a.k);g.plays++;g.secs+=p.secs;}return [...m.values()].sort((a,b)=>b.secs-a.secs);})();
+  const albumsL=group(p=>p.album?p.album+'|'+p.artist:'',p=>p.album).sort((a,b)=>b.secs-a.secs);
+  const dayset=new Set(ps.map(p=>new Date(p.at).toDateString()));
+  const totalDays=Math.min(days,Math.max(1,Math.ceil((now-Math.max(since,firstLog))/864e5)));
+  const hours=new Array(24).fill(0);ps.forEach(p=>hours[new Date(p.at).getHours()]+=p.secs);
+  const parts=[['Early bird','5–11',[5,6,7,8,9,10]],['Afternoon listener','11–17',[11,12,13,14,15,16]],['Evening listener','17–22',[17,18,19,20,21]],['Night owl','22–5',[22,23,0,1,2,3,4]]].map(([n,r,hs])=>({n,r,v:hs.reduce((a,h)=>a+hours[h],0)})).sort((a,b)=>b.v-a.v);
+  const wd=new Array(7).fill(0);ps.forEach(p=>wd[new Date(p.at).getDay()]+=p.secs);const topDay=wd.indexOf(Math.max(...wd));
+  const dayName=new Date(2026,0,4+topDay).toLocaleDateString(undefined,{weekday:'long'});
+  const tObj=g=>S.byId.get(g.p.tid);
+  const top=songs[0],tt=tObj(top);
+  const h=Math.floor(mins/60),mm=Math.round(mins%60);
+  const maxH=Math.max(...hours)||1;
+  box.innerHTML=chips+`<button class="pill amber" style="margin-bottom:12px" data-act="storyRoll">${ic('play',18)}Play as story</button>
+  <section class="wr-hero"><div class="wr-k">Your last ${label.toLowerCase()} · ${range}</div>
+    <div class="wr-big">${Math.round(mins).toLocaleString()}</div><div class="wr-unit">minutes of music</div>
+    <p>${h?`That's ${h} hr ${mm} min`:`That's ${mm} min`} across ${plural(ps.length,'play')}.</p></section>
+  <div class="wr-grid">
+    <div class="wr-tile"><b>${ps.length}</b><span>plays</span></div>
+    <div class="wr-tile"><b>${songs.length}</b><span>different songs</span></div>
+    <div class="wr-tile"><b>${dayset.size}<small>/${totalDays}</small></b><span>days you listened</span></div>
+    <div class="wr-tile"><b>${artistsL.length}</b><span>artists</span></div>
+  </div>
+  <section class="wr-song">${tt?art(tt,'lg'):`<div class="art lg ph" style="--h:${hue(top.p.album||top.name)}">${esc((top.name||'?')[0])}</div>`}
+    <div><div class="wr-k">Song of the ${label==='6 months'?'half year':label.toLowerCase()}</div><div class="wr-st">${esc(top.name)}</div><div class="muted">${esc(top.p.artist)} · played ${top.plays}×</div></div></section>
+  <h2>Top songs</h2><ol class="wr-list">${songs.slice(0,5).map(g=>{const t=tObj(g);return `<li>${t?art(t):`<div class="art sm ph" style="--h:${hue(g.name)}"></div>`}<div class="meta"><div class="t">${esc(g.name)}</div><div class="s">${esc(g.p.artist)}</div></div><span class="dur">${g.plays}×</span></li>`;}).join('')}</ol>
+  <h2>Top artists</h2><ol class="wr-list">${artistsL.slice(0,5).map(g=>{const t=artistTrack(g.k);return `<li>${t?art(t,'sm','round'):`<div class="art sm ph round" style="--h:${hue(g.name)}"></div>`}<div class="meta"><div class="t">${esc(g.name)}</div><div class="s">${plural(g.plays,'play')}</div></div><span class="dur">${Math.round(g.secs/60)} min</span></li>`;}).join('')}</ol>
+  ${albumsL.length?`<h2>Top album</h2><div class="wr-tile wide"><b style="font-size:20px">${esc(albumsL[0].name)}</b><span>${esc(albumsL[0].p.artist)} · ${Math.round(albumsL[0].secs/60)} min</span></div>`:''}
+  <h2>When you listen</h2>
+  <div class="wr-tile wide"><b style="font-size:22px">${parts[0].n}</b><span>Most of your music plays ${parts[0].r} h. Busiest day: ${dayName}.</span>
+    <div class="wr-bars" aria-hidden="true">${hours.map((v,i)=>`<i style="height:${Math.max(3,v/maxH*100)}%" title="${i}:00"></i>`).join('')}</div>
+    <div class="wr-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>
+  <p class="muted small" style="margin-top:18px">Stats count every song you listen to for at least 30 seconds${firstLog>since?`, starting ${fmtD(firstLog)}`:''}.</p>`;
+}
+/* ---------- Wrapped story (slideshow) ---------- */
+const DAY=864e5;
+function periodsAt(now){const d=new Date(now),y=d.getFullYear(),m=d.getMonth();
+  const wk=new Date(y,m,d.getDate()-((d.getDay()+6)%7)),pwk=new Date(wk.getFullYear(),wk.getMonth(),wk.getDate()-7);
+  const hs=m<6?new Date(y,0,1):new Date(y,6,1),phs=m<6?new Date(y-1,6,1):new Date(y,0,1);
+  const fd=x=>x.toLocaleDateString(undefined,{day:'numeric',month:'short'});
+  return [
+    {key:'y'+(y-1),kind:'year',from:+new Date(y-1,0,1),to:+new Date(y,0,1),title:`Your ${y-1}`,noun:'year',range:String(y-1)},
+    {key:'h'+phs.getFullYear()+'-'+phs.getMonth(),kind:'half',from:+phs,to:+hs,title:'Your half year',noun:'half year',range:`${phs.toLocaleDateString(undefined,{month:'short'})} – ${new Date(+hs-DAY).toLocaleDateString(undefined,{month:'short',year:'numeric'})}`},
+    {key:'m'+new Date(y,m-1,1).getFullYear()+'-'+new Date(y,m-1,1).getMonth(),kind:'month',from:+new Date(y,m-1,1),to:+new Date(y,m,1),title:`Your ${new Date(y,m-1,1).toLocaleDateString(undefined,{month:'long'})}`,noun:'month',range:new Date(y,m-1,1).toLocaleDateString(undefined,{month:'long',year:'numeric'})},
+    {key:'w'+pwk.toDateString(),kind:'week',from:+pwk,to:+wk,title:'Your week',noun:'week',range:`${fd(pwk)} – ${fd(new Date(+wk-DAY))}`},
+  ];}
+function computeStats(all,from,to){
+  const ok=p=>p.secs>0;const ps=all.filter(p=>ok(p)&&p.at>=from&&p.at<to);if(!ps.length)return null;
+  const prev=all.filter(p=>ok(p)&&p.at>=from-(to-from)&&p.at<from);
+  const grp=(list,kf,nf)=>{const m=new Map();for(const p of list){const k=kf(p);if(!k)continue;if(!m.has(k))m.set(k,{k,name:nf(p),plays:0,secs:0,p});const g=m.get(k);g.plays++;g.secs+=p.secs;}return [...m.values()];};
+  const songs=grp(ps,p=>p.tid||p.title+'|'+p.artist,p=>p.title).sort((a,b)=>b.plays-a.plays||b.secs-a.secs);
+  const artistsL=(()=>{const m=new Map();for(const p of ps)for(const a of pArtists(p)){if(!m.has(a.k))m.set(a.k,{k:a.k,name:a.n,plays:0,secs:0,p});const g=m.get(a.k);g.plays++;g.secs+=p.secs;}return [...m.values()].sort((a,b)=>b.secs-a.secs);})();
+  const secs=ps.reduce((a,p)=>a+p.secs,0),prevSecs=prev.reduce((a,p)=>a+p.secs,0);
+  const firstAt=new Map();for(const p of all){const k=p.tid||p.title+'|'+p.artist;if(!firstAt.has(k)||p.at<firstAt.get(k))firstAt.set(k,p.at);}
+  const fresh=songs.filter(g=>firstAt.get(g.k)>=from).length;
+  const firstLog=Math.min(...all.map(p=>p.at));
+  const days=Math.max(1,Math.round((Math.min(to,Date.now())-Math.max(from,new Date(new Date(firstLog).toDateString()).getTime()))/DAY));
+  const dayset=new Set(ps.map(p=>new Date(p.at).toDateString()));
+  const hours=new Array(24).fill(0);ps.forEach(p=>hours[new Date(p.at).getHours()]+=p.secs);
+  const parts=[['Early bird','between 5 and 11 in the morning',[5,6,7,8,9,10]],['Afternoon listener','between 11 and 17',[11,12,13,14,15,16]],['Evening listener','between 17 and 22',[17,18,19,20,21]],['Night owl','after 22, deep into the night',[22,23,0,1,2,3,4]]].map(([n,r,hs])=>({n,r,v:hs.reduce((a,h)=>a+hours[h],0)})).sort((a,b)=>b.v-a.v);
+  const wd=new Array(7).fill(0);ps.forEach(p=>wd[new Date(p.at).getDay()]+=p.secs);
+  const topDay=new Date(2026,0,4+wd.indexOf(Math.max(...wd))).toLocaleDateString(undefined,{weekday:'long'});
+  return {ps,songs,artists:artistsL,mins:secs/60,prevMins:prevSecs/60,fresh,days:Math.min(days,Math.round((to-from)/DAY)),active:dayset.size,hours,part:parts[0],topDay,share:artistsL[0]?Math.round(artistsL[0].secs/secs*100):0};
+}
+let ST=null;
+async function openStory(per){
+  let all=[];try{saveListen();all=await db.all('plays');}catch(e){}
+  const st=computeStats(all,per.from,per.to);if(!st){toast('Not enough listening in that period yet');return;}
+  if(per.key){const seen=LS.get('wrapSeen',{});seen[per.key]=Date.now();LS.set('wrapSeen',seen);}
+  const T=g=>S.byId.get(g.p.tid);
+  const artOf=(g,cls,extra='')=>{const t=T(g);return t?art(t,cls,extra):`<div class="art ${cls} ph ${extra}" style="--h:${hue(g.p.album||g.name)}">${esc((g.name||'?')[0])}</div>`;};
+  const artistArt=(name,cls)=>{const t=artistTrack(akey(name));return t?art(t,cls,'round'):`<div class="art ${cls} ph round" style="--h:${hue(name)}">${esc(name[0]||'?')}</div>`;};
+  const h=Math.floor(st.mins/60),mm=Math.round(st.mins%60),top=st.songs[0],ta=st.artists[0];
+  const diff=st.prevMins>5?Math.round((st.mins-st.prevMins)/st.prevMins*100):null;
+  const maxH=Math.max(...st.hours)||1;
+  const slides=[
+    ['s-a',`<div class="pop k">${esc(per.range)}</div><div class="pop xl">${esc(per.title)}<br>in music</div><div class="pop">Here's what Kazeta played for you.</div><div class="pop hint">Tap to continue</div>`],
+    ['s-b',`<div class="pop k">You listened for</div><div class="pop huge">${Math.round(st.mins).toLocaleString()}</div><div class="pop xl">minutes</div><div class="pop">${h?`That's ${h} hr ${mm} min`:`That's ${mm} min`} of music${diff!==null?`, ${diff>=0?diff+'% more':Math.abs(diff)+'% less'} than the ${per.noun} before.`:'.'}</div>`],
+    ['s-c',`<div class="pop k">You pressed play on</div><div class="pop huge">${st.active}<span class="of">/${st.days}</span></div><div class="pop xl">days</div><div class="pop">${st.active>=st.days?'Every single day. Respect.':`Your busiest day was ${st.topDay}.`}</div>`],
+    ['s-d',`<div class="pop k">Your #1 song</div><div class="pop cov">${artOf(top,'lg')}</div><div class="pop l">${esc(top.name)}</div><div class="pop">${esc(top.p.artist)} · played ${top.plays}×</div>${T(top)?`<button class="pop st-btn" data-st="play1" data-id="${top.p.tid}">${ic('play',18)}Play it</button>`:''}`],
+    ['s-e',`<div class="pop k">Your top songs</div><ol class="st-list">${st.songs.slice(0,5).map((g,i)=>`<li class="pop" style="animation-delay:${.15+i*.12}s">${artOf(g,'sm')}<div class="meta"><b>${esc(g.name)}</b><small>${esc(g.p.artist)}</small></div><span>${g.plays}×</span></li>`).join('')}</ol>`],
+    ['s-f',`<div class="pop k">Your top artist</div><div class="pop cov">${artistArt(ta.name,'lg')}</div><div class="pop l">${esc(ta.name)}</div><div class="pop">${Math.round(ta.secs/60)} minutes · ${st.share}% of everything you played</div>`],
+    ['s-g',`<div class="pop k">Your top artists</div><ol class="st-list">${st.artists.slice(0,5).map((g,i)=>`<li class="pop" style="animation-delay:${.15+i*.12}s">${artistArt(g.name,'sm')}<div class="meta"><b>${esc(g.name)}</b><small>${plural(g.plays,'play')}</small></div><span>${Math.round(g.secs/60)}m</span></li>`).join('')}</ol>`],
+    ['s-h',`<div class="pop k">Your listening personality</div><div class="pop xl">${st.part.n}</div><div class="pop">Most of your music played ${st.part.r}.</div><div class="pop st-bars-h" aria-hidden="true">${st.hours.map(v=>`<i style="height:${Math.max(4,v/maxH*100)}%"></i>`).join('')}</div><div class="pop st-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>`],
+    ['s-i',`<div class="pop k">You played</div><div class="pop huge">${st.songs.length}</div><div class="pop xl">different songs</div><div class="pop">${st.fresh?`${st.fresh} of them for the very first time.`:'All of them old favourites.'} ${plural(st.ps.length,'play')} in total.</div>`],
+    ['s-j',`<div class="sum pop"><div class="k">Kazeta Wrapped · ${esc(per.range)}</div><div class="sum-top">${artOf(top,'lg')}<div><small>Top song</small><b>${esc(top.name)}</b><small>Top artist</small><b>${esc(ta.name)}</b></div></div>
+      <div class="sum-grid"><div><small>Minutes</small><b>${Math.round(st.mins).toLocaleString()}</b></div><div><small>Plays</small><b>${st.ps.length}</b></div><div><small>Songs</small><b>${st.songs.length}</b></div><div><small>You're a</small><b>${st.part.n}</b></div></div>
+      <ol class="sum-list">${st.songs.slice(0,5).map(g=>`<li>${esc(g.name)}</li>`).join('')}</ol></div><div class="pop hint">Screenshot it to share · tap ✕ to close</div>`],
+  ];
+  ST={slides,i:0,timer:null,paused:false};
+  const el=$('#story');el.hidden=false;showSlide(0);
+}
+function showSlide(i){
+  if(!ST)return;ST.i=Math.max(0,Math.min(ST.slides.length-1,i));clearTimeout(ST.timer);
+  const n=ST.slides.length,[cls,body]=ST.slides[ST.i];
+  $('#story').innerHTML=`<div class="st-in"><div class="st-prog">${ST.slides.map((_,j)=>`<i class="${j<ST.i?'done':j===ST.i?'now':''}"><b></b></i>`).join('')}</div>
+    <button class="st-x" data-st="close" aria-label="Close">${ic('x',22)}</button>
+    <div class="slide ${cls}">${body}</div></div>`;
+  if(ST.i<n-1)ST.timer=setTimeout(()=>showSlide(ST.i+1),7000);
+}
+function closeStory(){if(ST)clearTimeout(ST.timer);ST=null;const el=$('#story');el.hidden=true;el.innerHTML='';if(view().type==='home'||view().type==='wrapped')render();}
+$('#story').addEventListener('click',e=>{
+  const b=e.target.closest('[data-st]');
+  if(b){e.stopPropagation();if(b.dataset.st==='close')closeStory();else if(b.dataset.st==='play1'){const id=b.dataset.id;S.from='Kazeta Wrapped';const ids=[id];playList(ids,0);toast('Playing your #1 song');}return;}
+  if(!ST)return;const x=e.clientX/window.innerWidth;
+  if(x<0.3)showSlide(ST.i-1);else if(ST.i===ST.slides.length-1)closeStory();else showSlide(ST.i+1);
+});
+document.addEventListener('keydown',e=>{if(!ST)return;if(e.key==='ArrowRight')showSlide(ST.i+1);if(e.key==='ArrowLeft')showSlide(ST.i-1);if(e.key==='Escape')closeStory();});
+document.addEventListener('visibilitychange',()=>{if(ST&&document.visibilityState==='hidden')clearTimeout(ST.timer);else if(ST&&ST.i<ST.slides.length-1)ST.timer=setTimeout(()=>showSlide(ST.i+1),7000);});
+async function fillWrapReady(){
+  const box=$('#wrapReady');if(!box)return;let all=[];try{all=await db.all('plays');}catch(e){return;}
+  if(!all.length)return;const seen=LS.get('wrapSeen',{}),first=Math.min(...all.map(p=>p.at));
+  const per=periodsAt(Date.now()).find(p=>!seen[p.key]&&p.to>first&&all.filter(x=>x.at>=p.from&&x.at<p.to&&x.secs>0).length>=3);
+  if(!per||!$('#wrapReady'))return;S.readyPer=per;
+  box.innerHTML=`<button class="wrcard ready" data-act="storyReady"><span class="meta"><small>New · ${esc(per.range)}</small><b>Your ${per.noun==='year'?per.range:per.noun} Wrapped is ready</b><small>Tap to watch your ${per.noun} in music</small></span>${ic('play',26)}</button>`;
+}
 function detailTitle(v){if(v.type==='artist')return artistName(v.key);if(v.type==='album'&&v.key.startsWith('single|#|')){const t=S.byId.get(v.key.slice(9));return t?t.title:'Single';}if(v.type==='wrapped')return 'Kazeta Wrapped';if(v.type==='imported')return 'Just imported';if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
 function banners(){
   let h='';
@@ -848,7 +977,7 @@ async function fillStorage(){fillLevel();
 }
 function detailHTML(v){
   let list=viewTracks(v);let artH,kind,name,sub,extra='';
-  if(v.type==='album'){const single=v.key.startsWith('single|#|');const [n0,a0]=v.key.split('|#|');const n=single?(list[0]?list[0].title:'Single'):n0,a=single?(list[0]?list[0].artist:''):a0;artH=art(list.find(t=>t.artKey)||list[0],'lg');kind=single?'Single':'Album';name=n;sub=`${esc(a)} · ${plural(list.length,'song')} · ${total(list)}`;}
+  if(v.type==='album'){const single=v.key.startsWith('single|#|');const [n0,a0]=v.key.split('|#|');const n=single?(list[0]?list[0].title:'Single'):n0,a=list[0]?(single?list[0].artist:(list[0].albumArtist||artistsOf(list[0])[0].n)):a0;artH=art(list.find(t=>t.artKey)||list[0],'lg');kind=single?'Single':'Album';name=n;sub=`${esc(a)} · ${plural(list.length,'song')} · ${total(list)}`;}
   else if(v.type==='artist'){artH=art(artistTrack(v.key),'lg','round');kind='Artist';name=artistName(v.key);sub=`${plural(list.length,'song')} · ${total(list)}`;}
   else if(v.type==='imported'){artH=list.length?mosaic(list):likedArt('lg');kind='Import';name='Just imported';
     const d=new Date(S.lastImportAt||Date.now());const when=d.toDateString()===new Date().toDateString()?`today at ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`:d.toLocaleDateString();
