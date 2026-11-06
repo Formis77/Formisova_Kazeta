@@ -427,7 +427,7 @@ const total=list=>{const s=list.reduce((a,t)=>a+(t.duration||0),0);const h=Math.
 const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='18';
+const VERSION='19';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -1022,7 +1022,7 @@ function playList(ids,i,mode){
 }
 async function loadIdx(i,auto,seekTo){
   const id=S.queue[i],t=S.byId.get(id);if(!t)return;
-  const tok=++playTok;S.qi=i;if(auto)prime();
+  const tok=++playTok;S.qi=i;if(auto){prime();wantPlay=true;}
   let blob=await db.get('blobs',id);
   if(tok!==playTok)return;
   if(!blob){audio.muted=false;toast('That song file is missing. Try importing it again.');return;}
@@ -1036,7 +1036,33 @@ async function loadIdx(i,auto,seekTo){
   if(auto){try{await audio.play();}catch(e){}t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
   updateNow();markRows();savePrefs();setMS(t);prepareNext();
 }
-function toggle(){if(!audio.src||S.qi<0){if(S.tracks.length){const ids=[...S.tracks].sort(byTitle).map(t=>t.id);playList(ids,0);}return;}if(audio.paused)audio.play().catch(()=>{});else audio.pause();}
+/* ---------- reliable resume ----------
+   iOS can drop a paused song's audio data (e.g. after a headphone pause with the screen locked).
+   play() then "succeeds" but stays silent or errors. So after every resume we check that time is
+   actually moving, and if not, reload the same song from storage at the same position. */
+let wantPlay=false,pausedAt=0,pausedPos=0,resumeWD=0,lastRecover=0;
+function userPause(){wantPlay=false;audio.pause();}
+function resume(){
+  if(!curId()){toggle();return;}
+  wantPlay=true;audio.muted=false;audio.volume=1;
+  const tok=playTok,t0=audio.currentTime,long=Date.now()-pausedAt>15000;
+  const p=audio.play();if(p)p.catch(()=>{if(tok===playTok&&wantPlay)reloadCurrent(true);});
+  clearTimeout(resumeWD);
+  resumeWD=setTimeout(()=>{if(tok!==playTok||!wantPlay)return;if(audio.paused||audio.currentTime-t0<0.3||audio.readyState<2)reloadCurrent(true);},long?1200:1800);
+}
+async function reloadCurrent(play){
+  const id=curId(),t=S.byId.get(id);if(!t)return;lastRecover=Date.now();
+  const pos=(audio.currentTime>0?audio.currentTime:pausedPos)||0,tok=++playTok;
+  let blob=await db.get('blobs',id);if(!blob||tok!==playTok)return;
+  blob=await playableBlob(t,blob);if(tok!==playTok)return;
+  if(curURL)URL.revokeObjectURL(curURL);curURL=URL.createObjectURL(blob);
+  audio.muted=false;audio.src=curURL;
+  audio.addEventListener('loadedmetadata',()=>{try{audio.currentTime=pos;}catch(e){}lastT=pos;},{once:true});
+  audio.load();
+  if(play){wantPlay=true;const p=audio.play();if(p)p.catch(()=>{});}
+}
+audio.addEventListener('pause',()=>{pausedAt=Date.now();pausedPos=audio.currentTime||pausedPos;});
+function toggle(){if(!audio.src||S.qi<0){if(S.tracks.length){const ids=[...S.tracks].sort(byTitle).map(t=>t.id);playList(ids,0);}return;}if(audio.paused)resume();else userPause();}
 function nextIndex(user){if(S.qi+1<S.queue.length)return S.qi+1;if((S.repeat==='all'||user)&&S.queue.length)return 0;return -1;}
 function next(user=true){
   if(S.qi<0)return;
@@ -1061,7 +1087,7 @@ async function prepareNext(){
     if(tok!==preTok)return;pre={id,url:URL.createObjectURL(blob)};}catch(e){}
 }
 function playPrepared(n){
-  const t=S.byId.get(S.queue[n]);++playTok;S.qi=n;
+  const t=S.byId.get(S.queue[n]);++playTok;S.qi=n;wantPlay=true;
   if(curURL)URL.revokeObjectURL(curURL);curURL=pre.url;pre=null;
   audio.muted=false;audio.src=curURL;const p=audio.play();if(p)p.catch(()=>{});startListen();
   if(t){t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
@@ -1080,7 +1106,8 @@ audio.addEventListener('ended',()=>{if(S.repeat==='one'){audio.currentTime=0;sta
 audio.addEventListener('play',()=>{updatePlayBtns();markRows();syncPlayBig();if('mediaSession' in navigator)navigator.mediaSession.playbackState='playing';});
 audio.addEventListener('pause',()=>{updatePlayBtns();markRows();savePrefs();syncPlayBig();if('mediaSession' in navigator)navigator.mediaSession.playbackState='paused';});
 audio.addEventListener('loadedmetadata',()=>{const t=S.byId.get(curId());if(t&&isFinite(audio.duration)&&Math.abs((t.duration||0)-audio.duration)>1){t.duration=audio.duration;db.put('tracks',t).catch(()=>{});}updateTime();});
-audio.addEventListener('error',()=>{if(!audio.src||audio.src.startsWith('data:'))return;const t=S.byId.get(curId());const code=audio.error?audio.error.code:0;const name=t?`“${t.title}”`:'this song';
+audio.addEventListener('error',()=>{if(!audio.src||audio.src.startsWith('data:'))return;
+  if(Date.now()-lastRecover>10000&&curId()){reloadCurrent(wantPlay);return;}const t=S.byId.get(curId());const code=audio.error?audio.error.code:0;const name=t?`“${t.title}”`:'this song';
   let msg=code===4?`This phone can't play ${name}${t&&t.ext?' ('+t.ext.toUpperCase()+' file)':''}.`:`Couldn't load ${name} (error ${code}).`;
   if(!isPWAFile)msg+=' The preview inside Claude may block audio; the homescreen version doesn\'t.';
   toast(msg);if(S.qi+1<S.queue.length)setTimeout(()=>next(false),1500);});
@@ -1138,7 +1165,7 @@ function setMS(t){
    song loads, so they are (re)applied on every song change. */
 function setMSHandlers(){if(!('mediaSession' in navigator))return;const ms=navigator.mediaSession,H=(a,f)=>{try{ms.setActionHandler(a,f);}catch(e){}};
   H('seekbackward',null);H('seekforward',null);
-  H('play',()=>audio.play().catch(()=>{}));H('pause',()=>audio.pause());H('stop',()=>audio.pause());
+  H('play',()=>resume());H('pause',()=>userPause());H('stop',()=>userPause());
   H('previoustrack',()=>{if(audio.currentTime>3)audio.currentTime=0;prev();});H('nexttrack',()=>next());
   H('seekto',d=>{if(d.seekTime!=null){audio.currentTime=d.seekTime;tickListen();}});}
 setMSHandlers();
