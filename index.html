@@ -428,6 +428,33 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 :root[data-kz="dark"] .art.ph{box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
 :root[data-kz="dark"] .shelf .cover .art{box-shadow:0 10px 24px rgba(0,0,0,.55)}
 :root[data-kz="dark"] .hero .art.lg,:root[data-kz="dark"] .hero .mosaic{box-shadow:0 18px 40px rgba(0,0,0,.55)}
+/* moods, collections, selection */
+.moods{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.moodcard{position:relative;height:84px;border-radius:20px;padding:12px;text-align:left;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;color:var(--fgc);background:radial-gradient(circle at 85% 15%,rgba(255,255,255,.28),transparent 45%),linear-gradient(145deg,var(--a),var(--b))}
+.moodcard b{font:700 15px/1.1 var(--display)}.moodcard small{font-size:11.5px;opacity:.8}
+.art.mood{background:radial-gradient(circle at 80% 15%,rgba(255,255,255,.3),transparent 50%),linear-gradient(145deg,var(--a),var(--b));color:var(--fgc)}
+.art.mood span{font:700 13px var(--display)}.art.lg.mood span{font-size:34px;letter-spacing:-.02em}
+.ffcard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin-top:16px;padding:10px 14px 10px 10px;border-radius:22px;background:linear-gradient(110deg,rgba(228,63,211,.14),rgba(34,211,197,.14))}
+.ffcard .meta{flex:1;min-width:0;display:flex;flex-direction:column}.ffcard b{font:600 15px var(--display)}.ffcard small{font-size:12.5px;color:var(--mute)}.ffcard>svg{color:var(--mag)}
+.dayhd{font:600 13px var(--display);color:var(--mute);margin:16px 0 4px;text-transform:uppercase;letter-spacing:.1em}
+.row{-webkit-touch-callout:none}
+.row.selmode{padding-left:4px}
+.rsel{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center}
+.row.selected .rsel{border:0}.row.selected{background:var(--deck)}
+.selchip{color:var(--fg)}
+#app.selecting #mini{display:none!important}
+#selbar{background:var(--char);color:#fff;margin:0 12px 8px;border-radius:22px;padding:6px 8px 8px!important;box-shadow:0 12px 30px rgba(18,18,20,.28)}
+.sb-top{display:flex;align-items:center;gap:8px}.sb-top b{flex:1;font-weight:600;font-size:14px}.sb-top .ib{color:#fff}.sb-top .seeall{color:var(--cyan);padding:0 8px}
+.sb-acts{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:4px}
+.sb-acts button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;border-radius:14px;font-size:11px;font-weight:500;color:#fff}
+.sb-acts button svg{color:var(--cyan)}.sb-acts button:last-child svg{color:#ff7b81}
+.sb-acts button:disabled{opacity:.35}
+:root[data-kz="dark"] #selbar{background:#16161a;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 12px 30px rgba(0,0,0,.5)}
+.ef-moods{display:flex;flex-wrap:wrap;gap:6px}
+.seg.seg4{grid-template-columns:repeat(4,1fr)}
+.set-sep{border-top:1px solid var(--line);padding-top:12px}
+.set-check{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500}
+.set-check input{width:22px;height:22px;accent-color:var(--cyan-d)}
 /* settings */
 .set-h{font:600 13px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--mute);margin:24px 0 8px}
 .set-h:first-child{margin-top:6px}
@@ -460,6 +487,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
     <button class="ib" data-act="next" id="miniNext" aria-label="Next song"></button>
     <div class="prog"><i id="miniProg"></i></div>
   </div>
+  <div id="selbar" class="gut" hidden></div>
   <nav id="tabs" class="gut" aria-label="Sections">
     <button data-act="tab" data-tab="home" id="tab-home"></button>
     <button data-act="tab" data-tab="search" id="tab-search"></button>
@@ -505,6 +533,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 <div id="sheet" class="gut" role="dialog" aria-modal="true"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="busy" hidden><div><b id="busyT">Importing</b><span class="muted" id="busyS"></span><div class="meter"><i id="busyM" style="width:0"></i></div></div></div>
+<input type="file" id="bkfile" hidden>
 <input type="file" id="imgfile" accept="image/*" hidden>
 <input type="file" id="file" multiple accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.aif,.aiff" hidden>
 
@@ -543,6 +572,9 @@ const P={
   moon:['s','M19.5 14.5A7.5 7.5 0 0 1 9.5 4.5a7.5 7.5 0 1 0 10 10z'],
   auto:['s','M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 4v16'],
   settings:['s','M5 4v5M5 13v7M12 4v9M12 17v3M19 4v2M19 10v10M3 11h4M10 15h4M17 8h4'],
+  mood:['s','M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM8.5 14c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2M9.2 9.8h.01M14.8 9.8h.01'],
+  clock:['s','M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM12 7.5V12l3 2'],
+  save:['s','M12 15V4M7.5 8.5 12 4l4.5 4.5M5 14v5.5h14V14'],
   arrow:['s','M7 17L17 7M9 7h8v8'],
   shield:['s','M12 3.5 5 6.5v5c0 4.4 3 7.7 7 9 4-1.3 7-4.6 7-9v-5z M9 12l2.2 2.2L15.5 10'],
 };
@@ -560,7 +592,7 @@ const phs=seed=>{const [a,b,f]=palOf(seed);return `--a:${a};--b:${b};--fgc:${f}`
 const hexRGB=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 const hue=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h%360;};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const VERSION='28';
+const VERSION='29';
 const isPWAFile=!!document.querySelector('link[rel="manifest"]');
 
 /* ---------- storage (IndexedDB, with in-memory fallback) ---------- */
@@ -574,13 +606,14 @@ const db={
   allKeyed:async s=>{if(useMem)return [...MEM[s].entries()];const d=await openDB();return new Promise((res,rej)=>{const out=[];const t=d.transaction(s);const r=t.objectStore(s).openCursor();r.onsuccess=()=>{const c=r.result;if(c){out.push([c.key,c.value]);c.continue();}};t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);});},
   get:async(s,k)=>useMem?MEM[s].get(k):tx(s,'readonly',o=>o.get(k)),
   put:async(s,v,k)=>{if(useMem){MEM[s].set(keyed(s)?v.id:k,v);return;}return tx(s,'readwrite',o=>keyed(s)?o.put(v):o.put(v,k));},
+  putMany:async(s,arr)=>{if(!arr.length)return;if(useMem){for(const v of arr)MEM[s].set(v.id,v);return;}const d=await openDB();return new Promise((res,rej)=>{const t=d.transaction(s,'readwrite');const o=t.objectStore(s);for(const v of arr)o.put(v);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error);});},
   del:async(s,k)=>{if(useMem){MEM[s].delete(k);return;}return tx(s,'readwrite',o=>o.delete(k));},
 };
 const LS={get(k,d){try{const v=localStorage.getItem('kazeta.'+k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem('kazeta.'+k,JSON.stringify(v));}catch(e){}}};
 
 /* ---------- state ---------- */
 const S={tracks:[],byId:new Map(),playlists:[],artURL:new Map(),tab:'home',stack:[],libTab:LS.get('libTab','songs'),q:'',
-  lastImport:[],lastImportAt:0,ctx:{ids:[],base:[],i:-1},uq:[],cur:null,from:'Your library',shuffle:LS.get('shuffle',false),repeat:LS.get('loopDefault5',false)?LS.get('repeat','all'):(LS.set('loopDefault5',true),LS.set('repeat','all'),'all'),loaded:false};
+  recent:[],sel:null,selCtx:null,lastImport:[],lastImportAt:0,ctx:{ids:[],base:[],i:-1},uq:[],cur:null,from:'Your library',shuffle:LS.get('shuffle',false),repeat:LS.get('loopDefault5',false)?LS.get('repeat','all'):(LS.set('loopDefault5',true),LS.set('repeat','all'),'all'),loaded:false};
 const audio=new Audio();audio.preload='auto';
 let curURL=null,playTok=0;
 
@@ -675,8 +708,8 @@ function loudness(buf){
 function gainFor(lufs,peak){let g=TARGET_LUFS-lufs;const head=peak>0?-20*Math.log10(peak):0;if(g>0)g=Math.min(g,head,6);return Math.round(Math.max(g,-15)*10)/10;}
 function getBits(b,pos,n){let v=0;for(let i=0;i<n;i++){const q=pos+i;v=(v<<1)|((b[q>>3]>>(7-(q&7)))&1);}return v;}
 function setBits(b,pos,n,v){for(let i=0;i<n;i++){const q=pos+i,m=1<<(7-(q&7));if((v>>(n-1-i))&1)b[q>>3]|=m;else b[q>>3]&=~m;}}
-function mp3Gain(b,steps){
-  if(!steps)return b;let p=0;
+function mp3Gain(b,steps,fade){
+  if(!steps&&!fade)return b;let p=0,fi=0;
   if(b[0]===0x49&&b[1]===0x44&&b[2]===0x33){p=10+ss(b,6);if(b[5]&0x10)p+=10;}
   const BR1=[0,32,40,48,56,64,80,96,112,128,160,192,224,256,320],BR2=[0,8,16,24,32,40,48,56,64,80,96,112,128,144,160],SR={3:[44100,48000,32000],2:[22050,24000,16000],0:[11025,12000,8000]};
   const n=b.length;let first=true;
@@ -691,41 +724,79 @@ function mp3Gain(b,steps){
     const tag=String.fromCharCode(b[o],b[o+1],b[o+2],b[o+3]);
     if(!(first&&(tag==='Xing'||tag==='Info'))){
       let bit=s*8+(m1?9+(nch===1?5:3)+4*nch:8+(nch===1?1:2));const grs=m1?2:1,blk=m1?59:63;
-      for(let g=0;g<grs;g++)for(let c=0;c<nch;c++){const at=bit+21,v=getBits(b,at,8);setBits(b,at,8,Math.max(0,Math.min(255,v+steps)));bit+=blk;}
+      const st=steps+(fade?fade(fi*(m1?1152:576)/sr):0);fi++;
+      if(st)for(let g=0;g<grs;g++)for(let c=0;c<nch;c++){const at=bit+21,v=getBits(b,at,8);setBits(b,at,8,Math.max(0,Math.min(255,v+st)));bit+=blk;}
     }
     first=false;p+=len;
   }
   return b;}
-function wavGain(b,db){
+function wavGain(b,db,fadeG){
   const v=new DataView(b.buffer,b.byteOffset,b.byteLength);if(b.length<12||v.getUint32(0)!==0x52494646)return b;let p=12,fmt=null;const k=Math.pow(10,db/20);
   while(p+8<=b.length){const id=String.fromCharCode(b[p],b[p+1],b[p+2],b[p+3]),sz=v.getUint32(p+4,true);
-    if(id==='fmt ')fmt={f:v.getUint16(p+8,true),bits:v.getUint16(p+22,true)};
-    else if(id==='data'&&fmt&&fmt.f===1&&fmt.bits===16){const e=Math.min(p+8+sz,b.length);for(let i=p+8;i+1<e;i+=2){let x=v.getInt16(i,true)*k;x=x>32767?32767:x<-32768?-32768:x;v.setInt16(i,x,true);}return b;}
+    if(id==='fmt ')fmt={f:v.getUint16(p+8,true),ch:v.getUint16(p+10,true),sr:v.getUint32(p+12,true),bits:v.getUint16(p+22,true)};
+    else if(id==='data'&&fmt&&fmt.f===1&&fmt.bits===16){const e=Math.min(p+8+sz,b.length),bps=fmt.sr*fmt.ch*2;for(let i=p+8;i+1<e;i+=2){let x=v.getInt16(i,true)*k*(fadeG?fadeG((i-p-8)/bps):1);x=x>32767?32767:x<-32768?-32768:x;v.setInt16(i,x,true);}return b;}
     p+=8+sz+(sz&1);}
   return b;}
+/* Smooth transitions: two songs can't overlap on a locked iPhone, so instead each song fades out at its end,
+   the silence at the start/end is skipped, and the next song fades in. Fades are written into the file
+   (MP3 frame gain / WAV samples), which keeps working with the screen off. */
+const xfadeSecs=()=>LS.get('xfade',3);
+const songEnd=t=>{const d=t&&t.duration||0;return t&&t.trimE&&t.trimE>5&&t.trimE<d?t.trimE:d;};
+const songStart=t=>t&&t.trimS>.25&&t.trimS<15?t.trimS:0;
+function fadeFor(t){const X=xfadeSecs();if(!X||!t||S.repeat==='one'||!(t.duration>20))return null;
+  const s0=songStart(t),e0=songEnd(t),fin=Math.min(1.5,X/2);
+  return x=>{let a=1;if(x<s0+fin)a=Math.max(0,(x-s0)/fin);const r=e0-x;if(r<X)a=Math.min(a,Math.max(0,r/X));return a;};}
 const isMP3=t=>t&&(t.ext==='mp3'||/mpeg|mp3/.test(t.type||''));
 const isWAV=t=>t&&(t.ext==='wav'||/wav/.test(t.type||''));
 const canLevel=t=>isMP3(t)||isWAV(t);
 async function playableBlob(t,blob){
   let b;try{b=new Uint8Array(await blob.arrayBuffer());}catch(e){return blob;}
-  if(LS.get('normalize',true)&&t&&t.gain){try{if(isMP3(t))b=mp3Gain(b,Math.round(t.gain/1.5));else if(isWAV(t))b=wavGain(b,t.gain);}catch(e){}}
+  const g=LS.get('normalize',true)&&t&&t.gain?t.gain:0,fg=fadeFor(t);
+  if(g||fg){try{if(isMP3(t))b=mp3Gain(b,Math.round(g/1.5),fg?x=>{const a=fg(x);return a>=.999?0:Math.round(20*Math.log10(Math.max(a,.004))/1.5);}:null);else if(isWAV(t))b=wavGain(b,g,fg);}catch(e){}}
   return new Blob([b],{type:(t&&t.type)||blob.type||'audio/mpeg'});}
+/* ---------- song analysis (one decode per song) ----------
+   loudness (volume levelling), tempo in BPM + energy + brightness (moods),
+   silent start/end (smooth transitions). Runs quietly in the background. */
+const ANA_V=2;
+function features(buf){
+  const sr=buf.sampleRate,n=buf.length,L=buf.getChannelData(0),R=buf.numberOfChannels>1?buf.getChannelData(1):L;
+  const hop=512,F=Math.floor(n/hop),env=new Float32Array(F),zc=new Float32Array(F);
+  for(let f=0;f<F;f++){let e=0,z=0,pv=0;const o=f*hop;for(let i=0;i<hop;i++){const v=(L[o+i]+R[o+i])*.5;e+=v*v;if((v>=0)!==(pv>=0))z++;pv=v;}env[f]=e/hop;zc[f]=z/hop;}
+  const SIL=1e-5;let a=0;while(a<F&&env[a]<SIL)a++;let b=F-1;while(b>a&&env[b]<SIL)b--;
+  let es=0,zs=0,c=0;for(let f=a;f<=b;f++){es+=env[f];zs+=zc[f];c++;}
+  /* tempo: fine onset envelope (128-sample steps) over up to 60 s from the middle, smoothed, autocorrelated with a harmonic check */
+  const H=128,fr=sr/H,midS=(a+b)/2*hop,s0=Math.max(a*hop,Math.floor(midS-30*sr)),s1=Math.min((b+1)*hop,s0+60*sr),N=Math.floor((s1-s0)/H);
+  let bl=0;
+  if(N>fr*8){const en=new Float32Array(N);for(let f=0;f<N;f++){let e=0;const o=s0+f*H;for(let i=0;i<H;i++){const v=(L[o+i]+R[o+i])*.5;e+=v*v;}en[f]=Math.log(e/H+1e-9);}
+    const on=new Float32Array(N);for(let f=1;f<N;f++){const d=en[f]-en[f-1];on[f]=d>0?d:0;}
+    const sm=new Float32Array(N);for(let f=2;f<N-2;f++)sm[f]=(on[f-2]+2*on[f-1]+3*on[f]+2*on[f+1]+on[f+2])/9;
+    let mean=0;for(let f=0;f<N;f++)mean+=sm[f];mean/=N;for(let f=0;f<N;f++)sm[f]-=mean;
+    const lo=Math.floor(fr*60/210),hi=Math.ceil(fr*60/55),ac=new Float32Array(2*hi+2);
+    for(let lag=lo;lag<=Math.min(2*hi+1,N-1);lag++){let acc=0;for(let i=lag;i<N;i++)acc+=sm[i]*sm[i-lag];ac[lag]=acc/(N-lag);}
+    let best=-1e9;for(let lag=lo;lag<=hi;lag++){const bpm=60*fr/lag,w=Math.exp(-.5*Math.pow(Math.log2(bpm/120)/1,2));const sc=(ac[lag]+.5*(ac[2*lag]||0))*w;if(sc>best){best=sc;bl=lag;}}
+    if(bl>lo&&bl<hi){const y0=ac[bl-1],y1=ac[bl],y2=ac[bl+1],den=y0-2*y1+y2;if(den<0)bl=bl+.5*(y0-y2)/den;}}
+  return {trimS:a*hop/sr,trimE:(b+1)*hop/sr,energy:c?10*Math.log10(es/c+1e-12):-90,bright:c?zs/c:0,bpm:bl?Math.round(60*fr/bl):0};
+}
 let anaBusy=false;
 async function analyzeLibrary(){
   if(anaBusy)return;anaBusy=true;let did=0;
   try{const Ctx=window.OfflineAudioContext||window.webkitOfflineAudioContext;if(!Ctx)return;
-    for(const t of S.tracks.filter(t=>t.gain==null&&canLevel(t))){
+    for(const t of S.tracks.filter(t=>t.av!==ANA_V)){
       if(!S.byId.has(t.id))continue;
-      try{const blob=await db.get('blobs',t.id);if(!blob)continue;const ab=await blob.arrayBuffer();const ctx=new Ctx(1,1,44100);
+      try{const blob=await db.get('blobs',t.id);if(!blob)continue;const ab=await blob.arrayBuffer();const ctx=new Ctx(1,1,22050);
         const buf=await new Promise((res,rej)=>{const pr=ctx.decodeAudioData(ab,res,rej);if(pr&&pr.then)pr.then(res,rej);});
-        const m=loudness(buf);t.lufs=Math.round(m.lufs*10)/10;t.peak=Math.round(m.peak*1000)/1000;t.gain=gainFor(m.lufs,m.peak);}
-      catch(e){t.gain=0;t.lufs=null;}
-      await db.put('tracks',t).catch(()=>{});did++;fillLevel();
-      await new Promise(r=>setTimeout(r,120));
+        if(canLevel(t)){const m=loudness(buf);t.lufs=Math.round(m.lufs*10)/10;t.peak=Math.round(m.peak*1000)/1000;t.gain=gainFor(m.lufs,m.peak);}else t.gain=0;
+        const f=features(buf);t.trimS=Math.round(f.trimS*100)/100;t.trimE=Math.round(f.trimE*100)/100;t.energy=Math.round(f.energy*10)/10;t.bright=Math.round(f.bright*1000)/1000;t.bpm=f.bpm;
+        if(!t.duration&&buf.duration)t.duration=buf.duration;}
+      catch(e){t.gain=t.gain||0;}
+      t.av=ANA_V;await db.put('tracks',t).catch(()=>{});did++;fillLevel();
+      if(did%5===0&&(view().type==='home'||view().type==='mood'))render();
+      await new Promise(r=>setTimeout(r,80));
     }}finally{anaBusy=false;}
-  if(did&&pre){URL.revokeObjectURL(pre.url);pre=null;prepareNext();}
+  if(did){if(pre){URL.revokeObjectURL(pre.url);pre=null;}prepareNext();if(view().type==='home'||view().type==='mood')render();}
 }
-function fillLevel(){const el=$('#stLevel');if(!el)return;const on=LS.get('normalize',true),lv=S.tracks.filter(canLevel),done=lv.filter(t=>t.gain!=null).length,other=S.tracks.length-lv.length;
+function fillLevel(){const el=$('#stLevel');if(!el)return;const on=LS.get('normalize',true),lv=S.tracks.filter(canLevel),done=lv.filter(t=>t.av===ANA_V).length,other=S.tracks.length-lv.length;
+  const an=S.tracks.filter(t=>t.av===ANA_V).length;const ap=$('#stAna');if(ap)ap.textContent=an<S.tracks.length?`Analysing songs for moods and transitions… ${an} of ${S.tracks.length}`:`All ${plural(S.tracks.length,'song')} analysed`;
   el.innerHTML=`<div class="lvrow"><div><b>Even out volume</b><div class="muted small">${on?(done<lv.length?`Measuring songs… ${done} of ${lv.length}`:`All ${plural(lv.length,'song')} play at a similar volume`):'Off: songs play at their original volume'}${other&&on?` · ${other} M4A/FLAC ${other===1?'file':'files'} can't be adjusted`:''}</div></div><button class="pill${on?' amber':''}" data-act="levelToggle" aria-pressed="${on}">${on?'On':'Off'}</button></div>`;}
 const EXT_MIME={mp3:'audio/mpeg',m4a:'audio/mp4',aac:'audio/aac',wav:'audio/wav',flac:'audio/flac',ogg:'audio/ogg',opus:'audio/ogg',aif:'audio/aiff',aiff:'audio/aiff'};
 const extOf=n=>(n.match(/\.([a-z0-9]+)$/i)||[,''])[1].toLowerCase();
@@ -884,8 +955,36 @@ function sortList(list,mode,v){
   if(mode==='new')return [...list].sort((a,b)=>ts(b)-ts(a));
   if(mode==='old')return [...list].sort((a,b)=>ts(a)-ts(b));
   return list;}
-function sortBar(v,mode,opts){return `<div class="sortbar" role="group" aria-label="Sort songs"><span class="muted small">Sort</span>${opts.map(([k,l])=>`<button class="chip sm" data-act="sortset" data-sk="${sortKeyFor(v)}" data-k="${k}" aria-pressed="${k===mode}">${l}</button>`).join('')}</div>`;}
+function sortBar(v,mode,opts){return `<div class="sortbar" role="group" aria-label="Sort songs">${SELCHIP}<span class="muted small">Sort</span>${opts.map(([k,l])=>`<button class="chip sm" data-act="sortset" data-sk="${sortKeyFor(v)}" data-k="${k}" aria-pressed="${k===mode}">${l}</button>`).join('')}</div>`;}
+/* ---------- moods (guessed from tempo, energy and brightness; the user can add/remove songs) ---------- */
+const MOODS=[
+ {k:'training',n:'Training',d:'Fast and strong, for workouts',c:['#17a99c','#07665e'],f:'#ffffff'},
+ {k:'hype',n:'Hype',d:'Loud, high-energy songs',c:['#f36ae5','#68125d'],f:'#ffffff'},
+ {k:'happy',n:'Happy',d:'Upbeat and bright',c:['#b9f4ee','#4be4d6'],f:'#0a5952'},
+ {k:'focus',n:'Focus',d:'Steady and not too loud',c:['#2c2c33','#0e0e10'],f:'#22d3c5'},
+ {k:'chill',n:'Chill',d:'Slow and relaxed',c:['#f8c8f1','#ef9ae4'],f:'#6b1460'},
+ {k:'sad',n:'Sad',d:'Slow, soft and dark',c:['#3a3a42','#0e0e10'],f:'#e43fd3'}];
+const moodDef=k=>MOODS.find(m=>m.k===k);
+function autoMood(t,k){if(t.av!==ANA_V||!t.bpm)return false;const b=t.bpm,e=t.energy,z=t.bright;
+  switch(k){case 'training':return (b>=118&&e>-17)||(e>-11.5&&b>=85);
+    case 'hype':return e>-12;
+    case 'happy':return b>=98&&b<=150&&e>-17&&z>=.07;
+    case 'focus':return e<=-13&&e>-24&&b>=70&&b<=125;
+    case 'chill':return b<108&&e<-13.5;
+    case 'sad':return b<100&&e<-15&&z<.09;}return false;}
+const moodHas=(t,k)=>t.mo&&t.mo[k]!=null?!!t.mo[k]:autoMood(t,k);
+const moodTracks=k=>S.tracks.filter(t=>moodHas(t,k));
+const moodStyle=m=>`--a:${m.c[0]};--b:${m.c[1]};--fgc:${m.f}`;
+const moodArt=(m,cls)=>`<div class="art ${cls} mood" style="${moodStyle(m)}"><span>${esc(m.n)}</span></div>`;
+const anaPending=()=>S.tracks.some(t=>t.av!==ANA_V);
+function forgotten(){const cut=Date.now()-21*864e5;return S.tracks.filter(t=>(t.plays||0)>=4&&t.lastPlayed&&t.lastPlayed<cut).sort((a,b)=>b.plays-a.plays).slice(0,50);}
+function recentTracks(){const seen=new Set(),out=[];for(const r of S.recent){if(seen.has(r.tid))continue;const t=S.byId.get(r.tid);if(!t)continue;seen.add(r.tid);out.push(t);if(out.length>=100)break;}return out;}
+function recentAt(id){const r=S.recent.find(x=>x.tid===id);return r?r.at:0;}
+async function loadRecent(){try{const ps=await db.all('plays');S.recent=ps.sort((a,b)=>b.at-a.at).slice(0,500).map(p=>({tid:p.tid,at:p.at}));}catch(e){S.recent=[];}}
 function viewTracks(v){
+  if(v.type==='mood')return moodTracks(v.key).sort(byTitle);
+  if(v.type==='forgotten')return forgotten();
+  if(v.type==='recent')return recentTracks();
   if(v.type==='album')return S.tracks.filter(t=>alKey(t)===v.key).sort(byNo);
   if(v.type==='artist')return S.tracks.filter(t=>artistKeysOf(t).includes(v.key)).sort((a,b)=>(a.album||'').localeCompare(b.album||'')||byNo(a,b));
   if(v.type==='playlist'){const p=S.playlists.find(p=>p.id===v.key);return p?p.ids.map(id=>S.byId.get(id)).filter(Boolean):[];}
@@ -909,6 +1008,7 @@ const plOf=id=>S.playlists.filter(p=>p.ids.includes(id));
 const CHECK=s=>`<svg class="ckc" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="var(--tape)"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="var(--tape-ink)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 function row(t,lk,i,ctx=''){
   const cur=curId()===t.id;
+  if(S.sel){const on=S.sel.has(t.id);return `<div class="row selmode${on?' selected':''}" data-act="selrow" data-tid="${t.id}"><span class="rsel">${on?CHECK(24):''}</span>${art(t)}<div class="meta"><div class="t">${esc(t.title)}</div><div class="s">${esc(t.artist)}${t.album?' · '+esc(t.album):''}</div></div><span class="dur">${fmt(t.duration)}</span></div>`;}
   return `<div class="row${cur?' cur':''}" data-act="play" data-l="${lk}" data-i="${i}" data-tid="${t.id}">${art(t)}<div class="meta"><div class="t">${cur?'<span class="eq"><i></i><i></i><i></i></span>':''}${esc(t.title)}</div><div class="s">${PLSET.has(t.id)?`<span class="ck" title="In a playlist">${CHECK(13)}</span>`:''}${t.liked?'<span class="lk">♥</span> ':''}${esc(t.artist)}${t.album?' · '+esc(t.album):''}</div></div><span class="dur">${fmt(t.duration)}</span><button class="ib" data-act="menu" data-id="${t.id}" data-ctx="${ctx}" aria-label="More options for ${esc(t.title)}">${ic('more',20)}</button></div>`;
 }
 function rows(list,ctxFn,from){const k=reg(list.map(t=>t.id));LISTS[k].from=from;return `<div class="list">${list.map((t,i)=>row(t,k,i,ctxFn?ctxFn(t,i):'')).join('')}</div>`;}
@@ -1081,7 +1181,7 @@ async function fillWrapReady(){
   if(!per||!$('#wrapReady'))return;S.readyPer=per;
   box.innerHTML=`<button class="wrcard ready" data-act="storyReady"><span class="meta"><small>New · ${esc(per.range)}</small><b>Your ${per.noun==='year'?per.range:per.noun} Wrapped is ready</b><small>Tap to watch your ${per.noun} in music</small></span>${ic('play',26)}</button>`;
 }
-function detailTitle(v){if(v.type==='artist')return artistName(v.key);if(v.type==='album'&&v.key.startsWith('single|#|')){const t=S.byId.get(v.key.slice(9));return t?t.title:'Single';}if(v.type==='wrapped')return 'Kazeta Wrapped';if(v.type==='imported')return 'Just imported';if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
+function detailTitle(v){if(v.type==='mood'){const m=moodDef(v.key);return m?m.n:'Mood';}if(v.type==='forgotten')return 'Forgotten favourites';if(v.type==='recent')return 'Recently played';if(v.type==='artist')return artistName(v.key);if(v.type==='album'&&v.key.startsWith('single|#|')){const t=S.byId.get(v.key.slice(9));return t?t.title:'Single';}if(v.type==='wrapped')return 'Kazeta Wrapped';if(v.type==='imported')return 'Just imported';if(v.type==='album')return v.key.split('|#|')[0];if(v.type==='artist')return v.key;if(v.type==='liked')return 'Liked Songs';const p=S.playlists.find(p=>p.id===v.key);return p?p.name:'Playlist';}
 function banners(){
   let h='';
   if(!isPWAFile&&!LS.get('hidePreview',false))h+=`<div class="banner"><p><b>Preview version.</b> This runs inside Claude, so the browser may clear imported songs. Install the homescreen version from the download in the chat for proper offline use.</p><button class="ib" data-act="hideBanner" data-k="hidePreview" aria-label="Dismiss">${ic('x',16)}</button></div>`;
@@ -1108,8 +1208,10 @@ function homeHTML(){
   const wr=`<button class="wrcard" data-act="open" data-type="wrapped"><span class="meta"><b>Kazeta Wrapped</b><small>Your listening stats: week, month, 6 months, year</small></span>${ic('arrow',20)}</button>`;
   const ct=S.byId.get(curId()),pz=isPaused();
   const feat=ct?`<div class="feat${pz?'':' live'}" data-act="openPlayer" role="button" tabindex="0" aria-label="Open player"><div class="disc">${art(ct,'lg')}</div><div class="meta"><div class="k">${pz?'Continue listening':'Playing now'}</div><div class="t">${esc(ct.title)}</div><div class="s">${esc(ct.artist)}</div></div><button class="playbig" data-pb="${esc(S.from||'')}" data-act="toggle" aria-label="${pz?'Play':'Pause'}">${ic(pz?'play':'pause',24)}</button></div>`:'';
-  return banners()+`<p class="hello">${greet}</p><button class="searchbtn" data-act="tab" data-tab="search">${ic('search',20)}Search songs, artists, albums</button>${feat}<div id="wrapReady"></div>${imp}<div class="quick">${quick.join('')}</div>${wr}`+
-    (recentAl.length?`<h2>Jump back in</h2><div class="shelf">${recentAl.map(a=>`<button class="cover" data-act="open" data-type="album" data-key="${esc(a.key)}">${art(a.tracks[0],'lg')}<b>${esc(a.name)}</b><small>${a.single?'Single · ':''}${esc(a.artist)}</small></button>`).join('')}</div>`:'')+
+  const moodsH=`<div class="sechead"><h2>Moods</h2>${anaPending()?'<span class="seeall">Analysing songs…</span>':''}</div><div class="moods">${MOODS.map(m=>`<button class="moodcard" style="${moodStyle(m)}" data-act="open" data-type="mood" data-key="${m.k}"><b>${m.n}</b><small>${plural(moodTracks(m.k).length,'song')}</small></button>`).join('')}</div>`;
+  const ff=forgotten(),ffH=ff.length?`<button class="ffcard" data-act="open" data-type="forgotten">${mosaicSm(ff)}<span class="meta"><b>Forgotten favourites</b><small>${plural(ff.length,'song')} you loved but haven't played lately</small></span>${ic('arrow',20)}</button>`:'';
+  const rec=recentTracks().slice(0,12);let recH='';if(rec.length){const rk=reg(rec.map(t=>t.id));LISTS[rk].from='Recently played';recH=`<div class="sechead"><h2>Recently played</h2><button class="seeall" data-act="open" data-type="recent">See all</button></div><div class="shelf">${rec.map((t,i)=>`<button class="cover" data-act="play" data-l="${rk}" data-i="${i}">${art(t,'lg')}<b>${esc(t.title)}</b><small>${esc(t.artist)}</small></button>`).join('')}</div>`;}
+  return banners()+`<p class="hello">${greet}</p><button class="searchbtn" data-act="tab" data-tab="search">${ic('search',20)}Search songs, artists, albums</button>${feat}<div id="wrapReady"></div>${imp}<div class="quick">${quick.join('')}</div>${ffH}${moodsH}${recH}${wr}`+
     (top.length?`<h2>On repeat</h2>${rows(top,null,'On repeat')}`:'')+
     `<div class="sechead"><h2>Recently added</h2><button class="seeall" data-act="seeNew">See all</button></div>${rows(added,null,'Recently added')}`;
 }
@@ -1119,9 +1221,18 @@ function settingsHTML(){
   <div class="set-card"><div class="set-row"><div><b>Theme</b><small>Auto follows your iPhone's light or dark mode</small></div></div>
     <div class="seg" role="group" aria-label="Theme">${[['light','Light','sun'],['dark','Dark','moon'],['auto','Auto','auto']].map(([k,l,i])=>`<button data-act="theme" data-k="${k}" aria-pressed="${th===k}">${ic(i,18)}${l}</button>`).join('')}</div></div>
   <h2 class="set-h">Playback</h2>
-  <div class="set-card"><div id="stLevel"></div></div>
+  <div class="set-card"><div id="stLevel"></div>
+    <div class="set-row set-sep"><div><b>Smooth transitions</b><small>Fades songs out and in and skips the silence between them. Fades work for MP3 and WAV files.</small></div></div>
+    <div class="seg seg4" role="group" aria-label="Smooth transitions">${[0,3,6,9].map(x=>`<button data-act="xfade" data-k="${x}" aria-pressed="${xfadeSecs()===x}">${x?x+' s':'Off'}</button>`).join('')}</div>
+    <div class="set-row set-sep"><div><b>Smart shuffle</b><small>Plays songs you haven't heard in a while more often and avoids the same artist twice in a row</small></div><button class="pill${LS.get('smartShuffle',true)?' amber':''}" data-act="smartToggle">${LS.get('smartShuffle',true)?'On':'Off'}</button></div>
+    <div class="muted small" id="stAna"></div></div>
   <h2 class="set-h">Storage on this phone</h2>
   <div class="set-card" id="storage"><div class="meter"><i id="stM" style="width:0"></i></div><div class="muted small" id="stT">Checking…</div><div class="textbtns"><span id="stB" style="display:contents"></span>${demos?`<button class="pill" data-act="rmdemo">${ic('trash',16)}Remove demo songs</button>`:''}</div></div>
+  <h2 class="set-h">Backup</h2>
+  <div class="set-card"><div class="set-row"><div><b>Back up your library</b><small>Playlists, likes, song names, moods, covers, Wrapped stats and settings in one file. Keep it in the Files app or iCloud Drive.</small></div></div>
+    <label class="set-check"><input type="checkbox" id="bkSongs"><span>Include the song files <span class="muted">(${mb(S.tracks.reduce((a,t)=>a+(t.size||0),0))})</span></span></label>
+    <div class="textbtns"><button class="pill amber" data-act="backup">${ic('save',16)}Create backup</button><button class="pill" data-act="restore">${ic('import',16)}Restore from backup</button></div>
+    <div class="muted small">${LS.get('lastBackup',0)?'Last backup: '+new Date(LS.get('lastBackup',0)).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'}):'No backup yet'}</div></div>
   <h2 class="set-h">App</h2>
   <div class="set-card"><div class="set-row"><div><b>Kazeta</b><small>Version ${VERSION}</small></div><button class="pill" data-act="update">${ic('import',16)}Check for updates</button></div>
     <button class="set-link" data-act="open" data-type="wrapped">Kazeta Wrapped${ic('arrow',18)}</button></div>`;
@@ -1151,6 +1262,9 @@ async function fillStorage(){fillLevel();
   else btn=`<button class="pill" data-act="persist">${ic('shield',16)}Keep songs on this phone</button>`;
   const m=$('#stM'),t=$('#stT'),b=$('#stB');if(m)m.style.width=Math.max(2,pct)+'%';if(t)t.textContent=txt;if(b)b.innerHTML=btn;
 }
+const SELCHIP='<button class="chip sm selchip" data-act="selStart">Select</button>';
+function dayLabel(at){if(!at)return 'Earlier';const d=new Date(at),t=new Date();const a=new Date(d.getFullYear(),d.getMonth(),d.getDate()),b=new Date(t.getFullYear(),t.getMonth(),t.getDate());const diff=Math.round((b-a)/864e5);
+  return diff===0?'Today':diff===1?'Yesterday':diff<7?d.toLocaleDateString(undefined,{weekday:'long'}):d.toLocaleDateString(undefined,{day:'numeric',month:'long'});}
 function detailHTML(v){
   let list=viewTracks(v);let artH,kind,name,sub,extra='';
   if(v.type==='album'){const single=v.key.startsWith('single|#|');const [n0,a0]=v.key.split('|#|');const n=single?(list[0]?list[0].title:'Single'):n0,a=list[0]?(single?list[0].artist:(list[0].albumArtist||artistsOf(list[0])[0].n)):a0;artH=art(list.find(t=>t.artKey)||list[0],'lg');kind=single?'Single':'Album';name=n;sub=`${esc(a)} · ${plural(list.length,'song')} · ${total(list)}`;}
@@ -1159,6 +1273,9 @@ function detailHTML(v){
     const d=new Date(S.lastImportAt||Date.now());const when=d.toDateString()===new Date().toDateString()?`today at ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`:d.toLocaleDateString();
     sub=`${plural(list.length,'song')} · ${when}`;
     extra=list.length?`<div class="textbtns" style="justify-content:center"><button class="pill amber" data-act="addAllTo">${ic('library',16)}Add all to playlist</button><button class="pill" data-act="swapAll">${ic('shuffle',16)}Swap title & artist for all</button><button class="pill" data-act="dismissImport">Done, hide this</button></div>`:'';}
+  else if(v.type==='mood'){const m=moodDef(v.key)||MOODS[0];artH=moodArt(m,'lg');kind='Mood';name=m.n;sub=`${m.d} · ${plural(list.length,'song')}`;}
+  else if(v.type==='forgotten'){artH=`<div class="art lg mood" style="--a:#e43fd3;--b:#0b9c91;--fgc:#fff">${ic('clock',64)}</div>`;kind='Made for you';name='Forgotten favourites';sub=`Songs you loved but haven't played in 3 weeks · ${plural(list.length,'song')}`;}
+  else if(v.type==='recent'){artH=`<div class="art lg mood" style="--a:#2c2c33;--b:#0e0e10;--fgc:#22d3c5">${ic('clock',64)}</div>`;kind='History';name='Recently played';sub=plural(list.length,'song');}
   else if(v.type==='liked'){artH=likedArt('lg');kind='Playlist';name='Liked Songs';sub=`${plural(list.length,'song')}${list.length?' · '+total(list):''}`;}
   else{const p=S.playlists.find(p=>p.id===v.key);if(!p)return '<p class="muted">This playlist was deleted.</p>';artH=plArt(p,'lg');kind='Playlist';name=p.name;sub=`${plural(list.length,'song')}${list.length?' · '+total(list):''}`;
     artH=`<button class="coverbtn" data-act="cover" data-id="${p.id}" aria-label="Change cover">${artH}<span>${ic('edit',16)}</span></button>`;
@@ -1167,8 +1284,12 @@ function detailHTML(v){
   const k=reg(list.map(t=>t.id));LISTS[k].from=name;
   let h=`<div class="hero">${artH}<div class="kind">${kind}</div><h3>${esc(name)}</h3><div class="sub">${sub}</div></div>`;
   h+=(extra?`<div class="bar" style="margin-top:14px;justify-content:center">${extra}</div>`:'')+(list.length?playCtrls(k):'<div style="height:12px"></div>');
-  if(!list.length)h+=`<p class="muted" style="text-align:center;margin-top:24px">${v.type==='liked'?'Tap the heart on any song to save it here.':'Add songs with the ••• button next to any song.'}</p>`;
-  else h+=sb+`<div class="list">${list.map((t,i)=>row(t,k,i,v.type==='playlist'?`pl:${v.key}:${t.id}`:'')).join('')}</div>`;
+  const emptyMsg=v.type==='liked'?'Tap the heart on any song to save it here.':v.type==='mood'?(anaPending()?'Kazeta is still analysing your songs. Moods fill up in a moment.':'No songs fit this mood yet. Add songs with Select, or in Edit song info.'):v.type==='forgotten'?'Songs you played at least 4 times but not in the last 3 weeks show up here.':v.type==='recent'?'Songs you listen to for 30 seconds or more show up here.':'Add songs with the ••• button next to any song.';
+  if(!sb&&list.length>1)sb=`<div class="sortbar">${SELCHIP}</div>`;
+  const ctxOf=t=>v.type==='playlist'?`pl:${v.key}:${t.id}`:v.type==='mood'?`mood:${v.key}`:'';
+  if(!list.length)h+=`<p class="muted" style="text-align:center;margin-top:24px">${emptyMsg}</p>`;
+  else if(v.type==='recent'){let day='';h+=sb+'<div class="list">'+list.map((t,i)=>{const d=dayLabel(recentAt(t.id));const hd=d!==day?`<div class="dayhd">${d}</div>`:'';day=d;return hd+row(t,k,i,'');}).join('')+'</div>';}
+  else h+=sb+`<div class="list">${list.map((t,i)=>row(t,k,i,ctxOf(t))).join('')}</div>`;
   return h;
 }
 function renderResults(){
@@ -1186,6 +1307,17 @@ function renderResults(){
 function markRows(){const id=curId();document.querySelectorAll('.row[data-tid]').forEach(r=>{const on=r.dataset.tid===id;if(on!==r.classList.contains('cur')){r.classList.toggle('cur',on);const t=r.querySelector('.t');const eq=t.querySelector('.eq');if(on&&!eq)t.insertAdjacentHTML('afterbegin','<span class="eq"><i></i><i></i><i></i></span>');if(!on&&eq)eq.remove();}});$('#main').classList.toggle('paused',isPaused());}
 
 /* ---------- playback ---------- */
+/* Smart shuffle: favours songs not heard lately and avoids the same artist twice in a row */
+function shuffleIds(ids){
+  if(!LS.get('smartShuffle',true)||ids.length<3)return shuffled(ids);
+  const now=Date.now(),pool=ids.map(id=>{const t=S.byId.get(id);const days=t&&t.lastPlayed?(now-t.lastPlayed)/864e5:45;const w=.5+Math.min(days,30)/30*1.5;return {id,a:t?artistsOf(t)[0].k:'',key:Math.pow(Math.random(),1/w)};});
+  pool.sort((x,y)=>y.key-x.key);const out=[];
+  while(pool.length){const last=out.length?out[out.length-1].a:null,cnt=new Map();for(const q of pool)cnt.set(q.a,(cnt.get(q.a)||0)+1);
+    let top=null,tc=0;for(const [a,c] of cnt)if(c>tc&&a!==last){tc=c;top=a;}
+    /* an artist with more songs than everyone else combined must be spread out now, or they'd bunch up at the end */
+    let k;if(top!=null&&tc>pool.length-tc)k=pool.findIndex(q=>q.a===top);else{k=pool.findIndex(q=>q.a!==last);if(k<0)k=0;}
+    out.push(pool.splice(k,1)[0]);}
+  return out.map(p=>p.id);}
 function shuffled(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 /* Queue model (like Spotify):
    S.cur  = the song playing now ({id, q:true if it came from the user queue})
@@ -1198,7 +1330,7 @@ function playList(ids,i,mode){
   if(mode==='shuffle'&&!S.shuffle){S.shuffle=true;LS.set('shuffle',true);}
   if(mode==='order'&&S.shuffle){S.shuffle=false;LS.set('shuffle',false);}
   const C=S.ctx;C.base=ids.slice();
-  if(S.shuffle){const si=mode==='shuffle'?Math.floor(Math.random()*ids.length):i;const rest=ids.slice();const [start]=rest.splice(si,1);C.ids=[start,...shuffled(rest)];C.i=0;}
+  if(S.shuffle){const si=mode==='shuffle'?Math.floor(Math.random()*ids.length):i;const rest=ids.slice();const [start]=rest.splice(si,1);C.ids=[start,...shuffleIds(rest)];C.i=0;}
   else{C.ids=ids.slice();C.i=i;}
   S.cur={id:C.ids[C.i],q:false};
   loadCur(true);
@@ -1215,6 +1347,7 @@ async function loadCur(auto,seekTo){
   if(tok!==playTok)return;
   if(curURL)URL.revokeObjectURL(curURL);curURL=URL.createObjectURL(blob);
   audio.src=curURL;audio.muted=false;startListen();
+  if(!seekTo&&songStart(t)&&xfadeSecs())seekTo=songStart(t);
   if(seekTo){audio.addEventListener('loadedmetadata',()=>{try{audio.currentTime=seekTo;}catch(e){}},{once:true});audio.load();}
   if(auto){try{await audio.play();}catch(e){}t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
   updateNow();markRows();savePrefs();setMS(t);prepareNext();
@@ -1293,7 +1426,7 @@ function next(user=true){
    the switch is synchronous, with no waiting on storage. */
 let pre=null,preTok=0;
 async function prepareNext(){
-  const C=S.ctx;if(S.shuffle&&S.repeat==='all'&&!S.uq.length&&C.i===C.ids.length-1&&C.ids.length>2){const cur=C.ids[C.i];C.ids=[...shuffled(C.ids.slice(0,-1)),cur];C.i=C.ids.length-1;savePrefs();}
+  const C=S.ctx;if(S.shuffle&&S.repeat==='all'&&!S.uq.length&&C.i===C.ids.length-1&&C.ids.length>2){const cur=C.ids[C.i];C.ids=[...shuffleIds(C.ids.slice(0,-1)),cur];C.i=C.ids.length-1;savePrefs();}
   const n=S.repeat==='one'||!S.cur?null:upNext(false),id=n?n.id:null;
   if(pre&&pre.id===id)return;
   if(pre){URL.revokeObjectURL(pre.url);pre=null;}
@@ -1307,6 +1440,7 @@ function playPrepared(){
   const t=S.byId.get(curId());exitSoft();++playTok;wantPlay=true;
   if(curURL)URL.revokeObjectURL(curURL);curURL=pre.url;pre=null;
   audio.muted=false;audio.src=curURL;const p=audio.play();if(p)p.catch(()=>{});startListen();
+  {const s0=songStart(t);if(s0&&xfadeSecs())audio.addEventListener('loadedmetadata',()=>{try{if(audio.currentTime<s0)audio.currentTime=s0;}catch(e){}},{once:true});}
   if(t){t.plays=(t.plays||0)+1;t.lastPlayed=Date.now();db.put('tracks',t).catch(()=>{});}
   updateNow();markRows();savePrefs();setMS(t);prepareNext();
 }
@@ -1319,7 +1453,7 @@ function prev(){const C=S.ctx;if(!S.cur)return;
 function setShuffle(on){
   S.shuffle=on;LS.set('shuffle',on);const C=S.ctx;
   if(C.ids.length){const cc=C.i>=0?C.ids[C.i]:null;if(!C.base.length)C.base=C.ids.slice();
-    if(on){const rest=C.base.slice(),k=cc?rest.indexOf(cc):-1;if(k>=0)rest.splice(k,1);C.ids=cc?[cc,...shuffled(rest)]:shuffled(rest);C.i=cc?0:-1;}
+    if(on){const rest=C.base.slice(),k=cc?rest.indexOf(cc):-1;if(k>=0)rest.splice(k,1);C.ids=cc?[cc,...shuffleIds(rest)]:shuffleIds(rest);C.i=cc?0:-1;}
     else{C.ids=C.base.slice();C.i=cc?Math.max(0,C.base.indexOf(cc)):-1;}}
   updateNow();savePrefs();prepareNext();render();toast(on?'Shuffle on':'Shuffle off');
 }
@@ -1336,7 +1470,7 @@ audio.addEventListener('error',()=>{if(soft||!audio.src||audio.src.startsWith('d
 /* ---------- listening log (for Kazeta Wrapped) ---------- */
 let L=null,lastT=0;
 const needSecs=id=>{const d=(S.byId.get(id)||{}).duration||60;return Math.min(30,d*0.5);};
-function saveListen(){if(!L||L.secs<needSecs(L.id)||L.secs-L.saved<1)return;L.saved=L.secs;const t=S.byId.get(L.id)||{};
+function saveListen(){if(!L||L.secs<needSecs(L.id)||L.secs-L.saved<1)return;if(!L.saved)S.recent.unshift({tid:L.id,at:L.at});L.saved=L.secs;const t=S.byId.get(L.id)||{};
   db.put('plays',{id:L.pid,tid:L.id,at:L.at,secs:Math.round(L.secs),title:t.title||'',artist:t.artist||'',album:t.album||''}).catch(()=>{});}
 function startListen(){saveListen();const id=curId();L=id?{id,pid:uid(),at:Date.now(),secs:0,saved:0}:null;lastT=audio.currentTime||0;}
 function tickListen(){if(soft)return;const now=audio.currentTime||0;if(!audio.paused&&L&&L.id===curId()){const d=now-lastT;if(d>0&&d<2.5)L.secs+=d;
@@ -1348,7 +1482,8 @@ let lastSave=0,dragging=false;
 audio.addEventListener('timeupdate',()=>{if(soft)return;
   /* Switch songs just BEFORE the current one ends. While audio is still playing, iOS keeps the
      locked-screen app awake and allows the switch; once it has ended, iOS may already have suspended us. */
-  if(!audio.paused&&isFinite(audio.duration)&&audio.duration>3&&audio.duration-audio.currentTime<0.7){
+  const endAt=(()=>{const tt=S.byId.get(curId());const e=xfadeSecs()?songEnd(tt):0;return e&&e<audio.duration?e:audio.duration;})();
+  if(!audio.paused&&isFinite(audio.duration)&&audio.duration>3&&endAt-audio.currentTime<0.7){
     if(S.repeat==='one'){audio.currentTime=0;startListen();}
     else{const n=upNext(false);if(n&&pre&&pre.id===n.id){commit(n);playPrepared();return;}}
   }
@@ -1431,13 +1566,79 @@ function openEdit(id){const t=S.byId.get(id);if(!t)return;S.editId=id;S.editSwap
     <button type="button" class="ef-swap" data-act="efSwap" aria-label="Swap title and artist"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>Swap title and artist</button>
     <label class="ef-l" for="efArtist">Artist</label><input id="efArtist" class="ef-in" maxlength="200" value="${esc(t.artist==='Unknown artist'?'':t.artist)}" placeholder="Unknown artist" autocomplete="off">
     <span class="muted small">For several artists use “feat.”, a comma or “&”, for example: David Guetta feat. Sia</span>
+    <span class="ef-l">Moods</span><div class="ef-moods">${MOODS.map(m=>`<button type="button" class="chip sm" data-act="efMood" data-k="${m.k}" aria-pressed="${moodHas(t,m.k)}">${m.n}</button>`).join('')}</div><span class="muted small">Kazeta guesses moods from tempo and energy. Tap to add or remove this song.</span>
     <label class="ef-l" for="efAlbum">Album</label><input id="efAlbum" class="ef-in" maxlength="200" value="${esc(t.album||'')}" placeholder="Leave empty for a single" autocomplete="off">
     <div class="sh-acts"><button type="button" class="pill" data-act="closeSheet">Cancel</button><button class="pill amber" type="submit">Save</button></div></form>`,'edit');
   $('#editForm').addEventListener('submit',async e=>{e.preventDefault();const t2=S.byId.get(id);if(!t2)return;
     const ti=$('#efTitle').value.trim(),ar=$('#efArtist').value.trim(),al=$('#efAlbum').value.trim();if(!ti){$('#efTitle').focus();return;}
     if(S.editSwapped)learnOrder(t2);
+    {const mo={...(t2.mo||{})};document.querySelectorAll('#editForm [data-act=efMood]').forEach(c=>{const k=c.dataset.k,on=c.getAttribute('aria-pressed')==='true',au=autoMood(t2,k);if(on===au)delete mo[k];else mo[k]=on;});t2.mo=mo;}
     t2.title=ti;t2.artist=ar||'Unknown artist';t2.album=al;t2.edited=true;ACACHE.clear();await db.put('tracks',t2);knownCache=null;
     closeSheet();render();if(curId()===id){updateNow();setMS(t2);}if(qOpen)renderQ();toast('Song info saved');});}
+/* ---------- backup & restore ----------
+   One .kazeta file: a text header (songs' info, playlists, plays, settings, file list) followed by the raw
+   cover images and, optionally, the song files themselves. Restore matches songs by id or by file name+size. */
+const BK_MAGIC='KAZETA-BACKUP1\n';
+async function makeBackup(withSongs){
+  let file;busy(true,'Creating backup',0,0);
+  try{const files=[],parts=[];
+    for(const [k,b] of await db.allKeyed('art')){files.push({kind:'art',key:k,size:b.size,type:b.type});parts.push(b);}
+    if(withSongs){let i=0;for(const t of S.tracks){const b=await db.get('blobs',t.id);if(b){files.push({kind:'blob',key:t.id,size:b.size,type:b.type||t.type});parts.push(b);}busy(true,'Creating backup',++i,S.tracks.length);}}
+    const settings={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('kazeta.'))settings[k.slice(7)]=localStorage.getItem(k);}}catch(e){}
+    const plays=await db.all('plays').catch(()=>[]);
+    const head={app:'kazeta',v:1,created:Date.now(),version:VERSION,withSongs:!!withSongs,tracks:S.tracks,playlists:S.playlists,plays,settings,files};
+    const hb=new TextEncoder().encode(JSON.stringify(head));
+    const d=new Date(),p2=x=>String(x).padStart(2,'0');
+    file=new File([BK_MAGIC,String(hb.length).padStart(12,'0'),hb,...parts],`Kazeta backup ${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}.kazeta`,{type:'application/octet-stream'});
+    S.bkFile=file;LS.set('lastBackup',Date.now());}
+  catch(e){busy(false);toast("The backup couldn't be created. There may not be enough free space.");return;}
+  busy(false);
+  openSheet(`<div class="field"><label>Backup ready</label><p class="muted" style="margin:0">${esc(file.name)} · ${mb(file.size)}${withSongs?' · includes song files':''}. Tap <b>Save backup</b>, then choose <b>Save to Files</b>.</p></div><div class="sh-acts"><button class="pill" data-act="closeSheet">Close</button><button class="pill amber" data-act="saveBackup">${ic('save',16)}Save backup</button></div>`);
+  if(view().type==='settings')render();
+}
+function saveBackupFile(){const f=S.bkFile;if(!f)return;
+  const dl=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},5000);closeSheet();toast('Backup downloaded');};
+  try{if(navigator.canShare&&navigator.canShare({files:[f]})){navigator.share({files:[f],title:'Kazeta backup'}).then(()=>{closeSheet();toast('Backup saved');}).catch(e=>{if(e&&e.name==='AbortError')return;dl();});return;}}catch(e){}
+  dl();}
+async function readBackup(file){
+  try{if((await file.slice(0,BK_MAGIC.length).text())!==BK_MAGIC)throw 0;
+    const len=parseInt(await file.slice(BK_MAGIC.length,BK_MAGIC.length+12).text(),10),start=BK_MAGIC.length+12;
+    const H=JSON.parse(await file.slice(start,start+len).text());if(H.app!=='kazeta')throw 0;
+    S.bkPending={file,H,base:start+len};
+    const d=new Date(H.created).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});
+    openSheet(`<div class="field"><label>Restore backup from ${d}?</label><p class="muted" style="margin:0">${plural(H.tracks.length,'song')}${H.withSongs?' with their files':' (info only, no song files)'}, ${plural(H.playlists.length,'playlist')}, ${plural((H.plays||[]).length,'play')} for Wrapped.<br>Songs already in Kazeta keep playing and get their saved names, likes, moods and stats back.${H.withSongs?' Missing songs are added from the backup.':' Songs that aren\'t in Kazeta any more need to be imported first.'}</p></div><div class="sh-acts"><button class="pill" data-act="closeSheet">Cancel</button><button class="pill amber" data-act="restoreYes">Restore</button></div>`);}
+  catch(e){toast("That file isn't a Kazeta backup.");}
+}
+async function applyBackup(){const B=S.bkPending;if(!B)return;const {file,H,base}=B;let matched=0,added=0,missing=0;
+  busy(true,'Restoring',0,H.tracks.length);
+  try{const at=new Map();let off=base;for(const f of H.files){at.set(f.kind+':'+f.key,{s:off,n:f.size,type:f.type});off+=f.size;}
+    const slice=async(a,type)=>new Blob([await file.slice(a.s,a.s+a.n).arrayBuffer()],{type});
+    const artKeys=new Set();for(const f of H.files)if(f.kind==='art'){await db.put('art',await slice(at.get('art:'+f.key),f.type||'image/jpeg'),f.key);artKeys.add(f.key);}
+    const bySig=new Map(S.tracks.map(t=>[t.sig,t])),idMap=new Map(),upd=[];let i=0;
+    for(const bt of H.tracks){busy(true,'Restoring',++i,H.tracks.length);
+      const t=S.byId.get(bt.id)||bySig.get(bt.sig);
+      if(t){idMap.set(bt.id,t.id);Object.assign(t,{title:bt.title,artist:bt.artist,album:bt.album,albumArtist:bt.albumArtist,liked:bt.liked,likedAt:bt.likedAt,mo:bt.mo,edited:bt.edited,order:bt.order,plays:Math.max(t.plays||0,bt.plays||0),lastPlayed:Math.max(t.lastPlayed||0,bt.lastPlayed||0)});if(bt.artKey&&artKeys.has(bt.artKey)){t.artKey=bt.artKey;t.color=bt.color;}upd.push(t);matched++;}
+      else{const a=at.get('blob:'+bt.id);if(a){await db.put('blobs',await slice(a,a.type||bt.type||'audio/mpeg'),bt.id);upd.push({...bt});idMap.set(bt.id,bt.id);added++;}else missing++;}}
+    await db.putMany('tracks',upd);
+    const pls=H.playlists.map(bp=>({...bp,ids:bp.ids.map(id=>idMap.get(id)).filter(Boolean),addedAt:Object.fromEntries(Object.entries(bp.addedAt||{}).map(([k,v])=>[idMap.get(k),v]).filter(([k])=>k))}));
+    await db.putMany('playlists',pls);
+    const have=new Set((await db.all('plays').catch(()=>[])).map(p=>p.id));
+    await db.putMany('plays',(H.plays||[]).filter(p=>!have.has(p.id)).map(p=>({...p,tid:idMap.get(p.tid)||p.tid})));
+    for(const [k,v] of Object.entries(H.settings||{})){if(k==='session'||k==='lastImport')continue;try{localStorage.setItem('kazeta.'+k,v);}catch(e){}}
+  }catch(e){busy(false);toast("The backup couldn't be restored completely.");console.warn(e);}
+  busy(false);S.bkPending=null;await loadAll();await loadRecent();S.shuffle=LS.get('shuffle',false);S.repeat=LS.get('repeat','all');applyTheme();render();updateNow();analyzeLibrary();
+  toast(`Restored ${plural(matched+added,'song')}${added?` (${added} added from the backup)`:''}${missing?`. ${missing} not found: import them and restore again`:''}`);
+}
+/* ---------- select multiple ---------- */
+function enterSel(id){S.sel=new Set(id?[id]:[]);S.selCtx=view();render();updateSelBar();}
+function exitSel(){if(!S.sel)return;S.sel=null;S.selCtx=null;updateSelBar();render();}
+function selIds(){const order=[...new Set([...document.querySelectorAll('#main .row[data-tid]')].map(r=>r.dataset.tid))];const out=order.filter(id=>S.sel.has(id));for(const id of S.sel)if(!out.includes(id))out.push(id);return out;}
+function toggleSel(id){if(S.sel.has(id))S.sel.delete(id);else S.sel.add(id);
+  document.querySelectorAll(`#main .row[data-tid="${id}"]`).forEach(r=>{const on=S.sel.has(id);r.classList.toggle('selected',on);r.querySelector('.rsel').innerHTML=on?CHECK(24):'';});updateSelBar();}
+function updateSelBar(){const b=$('#selbar'),on=!!S.sel;$('#app').classList.toggle('selecting',on);b.hidden=!on;if(!on){b.innerHTML='';return;}
+  const n=S.sel.size,ctx=S.selCtx||{},inPl=ctx.type==='playlist';
+  const acts=[['library','Playlist','selPl'],['addq','Queue','selQ'],['heart','Like','selLike'],['mood','Mood','selMood'],inPl?['minus','Remove','selRmPl']:['trash','Delete','selDel']];
+  b.innerHTML=`<div class="sb-top"><button class="ib" data-act="selCancel" aria-label="Stop selecting">${ic('x',20)}</button><b>${n?plural(n,'song')+' selected':'Tap songs to select'}</b><button class="seeall" data-act="selAll">Select all</button></div><div class="sb-acts">${acts.map(([i,l,a])=>`<button data-act="${a}"${n?'':' disabled'}>${ic(i,20)}<span>${l}</span></button>`).join('')}</div>`;}
 function afterQueueChange(){savePrefs();updateNow();prepareNext();}
 /* ---------- queue screen (Spotify-style) ---------- */
 let qOpen=false,qSel=new Set();
@@ -1492,6 +1693,7 @@ function openMenu(id,ctx){
   let h=sheetHead(t)+optH('edit','Edit song info','editInfo',d)+optH(t.liked?'heartF':'heart',t.liked?'Remove from Liked Songs':'Save to Liked Songs','likeId',d)+
     (()=>{const n=plOf(id).length;return n?`<button class="opt" data-act="addto" ${d}>${CHECK(22)}<span>In ${plural(n,'playlist')} · Change</span></button>`:optH('library','Add to playlist','addto',d);})()+optH('next2','Play next','playnext',d)+optH('addq','Add to queue','addq',d);
   if(ctx&&ctx.startsWith('pl:'))h+=optH('minus','Remove from this playlist','rmpl',d);
+  if(ctx&&ctx.startsWith('mood:'))h+=optH('minus',`Remove from ${moodDef(ctx.split(':')[1]).n}`,'rmMood',d);
   h+=optH('album','Go to album','goalbum',d)+optH('user','Go to artist','goartist',d)+optH('trash','Delete from Kazeta','del',d,'danger');
   openSheet(h);
 }
@@ -1518,9 +1720,9 @@ async function toggleLike(id){const t=S.byId.get(id);if(!t)return;t.liked=!t.lik
 
 /* ---------- actions ---------- */
 const A={
-  tab:el=>{navAnim=true;const n=el.dataset.tab;if(S.tab===n&&!S.stack.length&&n==='search'){const q=$('#q');if(q)q.focus();return;}S.tab=n;S.stack=[];$('#main').innerHTML='';render();$('#main').scrollTop=0;},
-  open:el=>{navAnim=true;S.stack.push({type:el.dataset.type,key:el.dataset.key});closeSheet();closePlayer();$('#main').innerHTML='';render();$('#main').scrollTop=0;},
-  back:()=>{navAnim=true;S.stack.pop();$('#main').innerHTML='';render();},
+  tab:el=>{navAnim=true;if(S.sel){S.sel=null;S.selCtx=null;updateSelBar();}const n=el.dataset.tab;if(S.tab===n&&!S.stack.length&&n==='search'){const q=$('#q');if(q)q.focus();return;}S.tab=n;S.stack=[];$('#main').innerHTML='';render();$('#main').scrollTop=0;},
+  open:el=>{navAnim=true;if(S.sel){S.sel=null;S.selCtx=null;updateSelBar();}S.stack.push({type:el.dataset.type,key:el.dataset.key});closeSheet();closePlayer();$('#main').innerHTML='';render();$('#main').scrollTop=0;},
+  back:()=>{navAnim=true;if(S.sel){S.sel=null;S.selCtx=null;updateSelBar();}S.stack.pop();$('#main').innerHTML='';render();},
   libtab:el=>{navAnim=true;S.libTab=el.dataset.k;LS.set('libTab',S.libTab);render();},
   play:el=>{const l=LISTS[el.dataset.l];if(!l)return;S.from=l.from||'Your library';const i=+el.dataset.i;if(curId()===l[i]){openPlayer();return;}playList(l,i);},
   playall:el=>{const l=LISTS[el.dataset.l];if(!l)return;S.from=l.from||'Your library';playList(l,0,el.dataset.sh?'shuffle':'order');},
@@ -1553,9 +1755,32 @@ const A={
   delYes:async el=>{closeSheet();await deleteTrack(el.dataset.id);updateNow();savePrefs();if(S.stack.length&&!viewTracks(view()).length&&view().type!=='playlist'&&view().type!=='liked')S.stack.pop();render();toast('Song deleted');},
   rmdemo:async()=>{for(const t of S.tracks.filter(t=>t.demo))await deleteTrack(t.id);updateNow();savePrefs();render();toast('Demo songs removed');},
   update:()=>checkUpdate(),
+  selStart:()=>enterSel(null),
+  selrow:el=>toggleSel(el.dataset.tid),
+  selCancel:()=>exitSel(),
+  selAll:()=>{document.querySelectorAll('#main .row[data-tid]').forEach(r=>S.sel.add(r.dataset.tid));render();updateSelBar();},
+  selPl:()=>openSheet(`<div class="field"><label>Add ${plural(S.sel.size,'song')} to…</label></div>`+optH('plus','New playlist','selNewPl')+S.playlists.map(p=>`<button class="opt" data-act="selToPl" data-pl="${p.id}">${plArt(p,'sm')}<span>${esc(p.name)}<span class="muted small" style="display:block">${plural(p.ids.length,'song')}</span></span></button>`).join('')),
+  selToPl:async el=>{const ids=selIds(),p=S.playlists.find(p=>p.id===el.dataset.pl);closeSheet();if(!p)return;const fresh=ids.filter(id=>!p.ids.includes(id));p.ids.push(...fresh);p.addedAt=p.addedAt||{};fresh.forEach((id,i)=>p.addedAt[id]=Date.now()+i);await savePl(p);exitSel();toast(fresh.length?`Added ${plural(fresh.length,'song')} to ${p.name}`:`Already in ${p.name}`);},
+  selNewPl:()=>{const ids=selIds();openNameForm('New playlist','Create','',async n=>{const p=await newPlaylist(n);p.ids=ids.slice();p.addedAt={};ids.forEach((id,i)=>p.addedAt[id]=Date.now()+i);await savePl(p);exitSel();toast(`Created ${n} with ${plural(ids.length,'song')}`);});},
+  selQ:()=>{const ids=selIds();if(!S.cur){S.from='Selected songs';playList(ids,0);}else{S.uq.push(...ids);afterQueueChange();}exitSel();toast(`Added ${plural(ids.length,'song')} to queue`);},
+  selLike:async()=>{const ts=selIds().map(id=>S.byId.get(id)).filter(Boolean),all=ts.every(t=>t.liked);for(const t of ts){t.liked=!all;t.likedAt=all?0:Date.now();}await db.putMany('tracks',ts);exitSel();updateNow();toast(all?`Removed ${plural(ts.length,'song')} from Liked Songs`:`Saved ${plural(ts.length,'song')} to Liked Songs`);},
+  selMood:()=>{const ctx=S.selCtx||{};openSheet(`<div class="field"><label>Add ${plural(S.sel.size,'song')} to a mood</label></div>`+MOODS.map(m=>`<button class="opt" data-act="selSetMood" data-k="${m.k}">${moodArt(m,'sm')}<span>${m.n}<span class="muted small" style="display:block">${m.d}</span></span></button>`).join('')+(ctx.type==='mood'?optH('minus',`Remove from ${moodDef(ctx.key).n}`,'selUnMood','','danger'):''));},
+  selSetMood:async el=>{const k=el.dataset.k,ts=selIds().map(id=>S.byId.get(id)).filter(Boolean);for(const t of ts)t.mo={...(t.mo||{}),[k]:true};await db.putMany('tracks',ts);closeSheet();exitSel();toast(`Added ${plural(ts.length,'song')} to ${moodDef(k).n}`);},
+  selUnMood:async()=>{const k=(S.selCtx||{}).key,ts=selIds().map(id=>S.byId.get(id)).filter(Boolean);for(const t of ts)t.mo={...(t.mo||{}),[k]:false};await db.putMany('tracks',ts);closeSheet();exitSel();toast(`Removed ${plural(ts.length,'song')} from ${moodDef(k).n}`);},
+  selRmPl:async()=>{const ctx=S.selCtx||{},p=S.playlists.find(p=>p.id===ctx.key);if(!p)return;const ids=new Set(selIds());p.ids=p.ids.filter(id=>!ids.has(id));await savePl(p);exitSel();toast(`Removed ${plural(ids.size,'song')} from ${p.name}`);},
+  selDel:()=>openSheet(`<div class="field"><label>Delete ${plural(S.sel.size,'song')}?</label><p class="muted" style="margin:0">They're removed from Kazeta and all playlists. The original files in the Files app stay.</p></div><div class="sh-acts"><button class="pill" data-act="closeSheet">Cancel</button><button class="pill red" data-act="selDelYes">Delete ${plural(S.sel.size,'song')}</button></div>`),
+  selDelYes:async()=>{const ids=selIds();closeSheet();busy(true,'Deleting',0,ids.length);let i=0;for(const id of ids){await deleteTrack(id);busy(true,'Deleting',++i,ids.length);}busy(false);updateNow();savePrefs();exitSel();toast(`Deleted ${plural(ids.length,'song')}`);},
+  rmMood:async el=>{const t=S.byId.get(el.dataset.id),k=(el.dataset.ctx||'').split(':')[1];closeSheet();if(!t||!k)return;t.mo={...(t.mo||{}),[k]:false};await db.put('tracks',t);render();toast(`Removed from ${moodDef(k).n}`);},
+  xfade:el=>{LS.set('xfade',+el.dataset.k);if(pre){URL.revokeObjectURL(pre.url);pre=null;}prepareNext();render();toast(+el.dataset.k?`Smooth transitions: ${el.dataset.k} seconds, from the next song`:'Smooth transitions off');},
+  smartToggle:()=>{const on=!LS.get('smartShuffle',true);LS.set('smartShuffle',on);render();toast(on?'Smart shuffle on':'Smart shuffle off');},
+  backup:()=>makeBackup(!!($('#bkSongs')&&$('#bkSongs').checked)),
+  saveBackup:()=>saveBackupFile(),
+  restore:()=>$('#bkfile').click(),
+  restoreYes:()=>{closeSheet();applyBackup();},
   theme:el=>{LS.set('theme',el.dataset.k);applyTheme();render();toast(({light:'Light theme',dark:'Dark theme',auto:'Theme follows your iPhone'})[el.dataset.k]);},
   seeNew:()=>{LS.set('sort:songs','new');S.libTab='songs';LS.set('libTab','songs');S.tab='library';S.stack=[];navAnim=true;render();$('#main').scrollTop=0;},
   editInfo:el=>openEdit(el.dataset.id),
+  efMood:el=>el.setAttribute('aria-pressed',el.getAttribute('aria-pressed')==='true'?'false':'true'),
   efSwap:()=>{const a=$('#efTitle'),b=$('#efArtist'),x=a.value;a.value=b.value;b.value=x;S.editSwapped=!S.editSwapped;},
   efCover:()=>{S.coverFor='track:'+S.editId;$('#imgfile').click();},
   swapAll:async()=>{const list=viewTracks({type:'imported'});let n=0;
@@ -1595,6 +1820,7 @@ const A={
 };
 document.addEventListener('click',e=>{if(swallow&&e.target.closest('.row,.qrow2'))return;const el=e.target.closest('[data-act]');if(!el)return;const f=A[el.dataset.act];if(f){e.stopPropagation();f(el,e);}});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[role="button"][data-act]')){e.preventDefault();e.target.click();}if(e.key==='Escape'){if(qOpen)closeQ();else{closeSheet();closePlayer();}}});
+$('#bkfile').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)readBackup(f);});
 $('#imgfile').addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];e.target.value='';
   if(f&&String(S.coverFor).startsWith('track:')){const t=S.byId.get(S.coverFor.slice(6));if(!t)return;
     try{const r=await processArt(f);const key='tr:'+t.id+':'+Date.now();await db.put('art',r.blob,key);
@@ -1634,6 +1860,14 @@ let swallow=false;
   q.addEventListener('touchmove',e=>move(e,-1),{passive:true});
   q.addEventListener('touchend',()=>end(row=>{const k=row.dataset.key;qApply(x=>x!==k);qSel.delete(k);afterQueueChange();toast('Removed from queue');},-1),{passive:true});
 })();
+/* long-press a song (or right-click) to start selecting */
+(()=>{let tm=0,x0=0,y0=0,row=null;const m=$('#main');
+  m.addEventListener('touchstart',e=>{const r=e.target.closest('.row[data-tid]');if(!r||e.target.closest('button')||S.sel)return;row=r;x0=e.touches[0].clientX;y0=e.touches[0].clientY;clearTimeout(tm);
+    tm=setTimeout(()=>{if(!row)return;swallow=true;setTimeout(()=>{swallow=false;},700);const id=row.dataset.tid;row=null;enterSel(id);},480);},{passive:true});
+  m.addEventListener('touchmove',e=>{if(row&&(Math.abs(e.touches[0].clientX-x0)>10||Math.abs(e.touches[0].clientY-y0)>10)){clearTimeout(tm);row=null;}},{passive:true});
+  m.addEventListener('touchend',()=>{clearTimeout(tm);row=null;},{passive:true});
+  m.addEventListener('contextmenu',e=>{const r=e.target.closest('.row[data-tid]');if(!r)return;e.preventDefault();if(!S.sel)enterSel(r.dataset.tid);});
+})();
 /* swipe down to close the player */
 (()=>{let y0=null;const p=$('#player');p.addEventListener('touchstart',e=>{if(e.target.closest('input'))return;y0=e.touches[0].clientY;},{passive:true});p.addEventListener('touchend',e=>{if(y0!=null&&e.changedTouches[0].clientY-y0>110)closePlayer();y0=null;},{passive:true});})();
 
@@ -1650,8 +1884,8 @@ let swallow=false;
     else{const cid=s.queue[s.qi];S.ctx={ids:s.queue.filter(ok),base:(s.base||[]).filter(ok),i:-1};S.ctx.i=S.ctx.ids.indexOf(cid);if(S.ctx.i>=0)S.cur={id:cid,q:false};}
     if(!S.ctx.base.length)S.ctx.base=S.ctx.ids.slice();S.from=s.from||'Your library';
     if(S.cur)await loadCur(false,s.time);}
-  applyTheme();render();updateNow();
-  setTimeout(()=>{if(LS.get('normalize',true))analyzeLibrary();},2500);
+  await loadRecent();applyTheme();render();updateNow();
+  setTimeout(()=>analyzeLibrary(),2500);
   if(isPWAFile&&'serviceWorker' in navigator){
     const hadCtl=!!navigator.serviceWorker.controller;let reloaded=false;
     navigator.serviceWorker.addEventListener('controllerchange',()=>{if(hadCtl&&!reloaded&&audio.paused){reloaded=true;location.reload();}});
